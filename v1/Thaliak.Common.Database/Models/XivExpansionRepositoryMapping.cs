@@ -4,7 +4,10 @@ namespace Thaliak.Common.Database.Models;
 
 public class XivExpansionRepositoryMapping
 {
-    public static Regex ExpansionRegex = new(@"(?:https?:\/\/.*\/)?(game|boot)\/(?:ex(\d)|\w+)\/(.*)",
+    private static readonly Regex ExpansionRegex = new(@"(?:https?:\/\/.*\/)?(game|boot)\/(?:ex(\d)|\w+)\/(.*)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex TraditionalChineseExpansionRegex = new(@"(?:https?:\/\/.*\/)?ffxiv\/[^\/]+\/ex(\d)\/.*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public int GameRepositoryId { get; set; }
@@ -17,6 +20,12 @@ public class XivExpansionRepositoryMapping
 
     public static int GetExpansionId(string patchName)
     {
+        var tcMatch = TraditionalChineseExpansionRegex.Match(patchName);
+        if (tcMatch.Success)
+        {
+            return int.Parse(tcMatch.Groups[1].Value);
+        }
+
         var match = ExpansionRegex.Match(patchName);
         if (!match.Success)
         {

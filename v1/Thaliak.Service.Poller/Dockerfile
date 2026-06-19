@@ -6,6 +6,9 @@ COPY ["v1/Thaliak.Service.Poller/openssl.cnf", "/etc/ssl/openssl.cnf"]
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
+COPY ["v1/Thaliak.sln", "."]
+COPY ["v1/Thaliak.Common.Database/Thaliak.Common.Database.csproj", "Thaliak.Common.Database/"]
+COPY ["v1/Thaliak.Common.Messages/Thaliak.Common.Messages.csproj", "Thaliak.Common.Messages/"]
 COPY ["v1/Thaliak.Service.Poller/Thaliak.Service.Poller.csproj", "Thaliak.Service.Poller/"]
 RUN dotnet restore "Thaliak.Service.Poller/Thaliak.Service.Poller.csproj"
 COPY v1/ .
@@ -17,6 +20,7 @@ RUN dotnet publish "Thaliak.Service.Poller.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
+VOLUME ["/data"]
 COPY --from=publish /app/publish .
 
 ENTRYPOINT ["dotnet", "Thaliak.Service.Poller.dll"]

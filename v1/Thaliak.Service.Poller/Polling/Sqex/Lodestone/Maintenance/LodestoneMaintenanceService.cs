@@ -1,156 +1,180 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Xml.Serialization;
 using Serilog;
 
 namespace Thaliak.Service.Poller.Polling.Sqex.Lodestone.Maintenance;
 
-// hey, past Ava: this sucks
-public class LodestoneMaintenanceService : IPoller
+public class LodestoneMaintenanceService(HttpClient http) : IPoller
 {
-    private static readonly Regex MaintenanceArticleRegex =
-        new(
-            "<a href=\"(/lodestone/.+?)\" class=\"news__list--link(?: link)? ic__maintenance--list\">.+?<span class=\"news__list--tag\">\\[(.+?)\\]</span>\\s*(.+?)\\s*</p>.+?</a>",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Singleline);
-
-    private static readonly Regex MaintenanceTitleRegex =
-        new(@"All Worlds (Emergency )?Maintenance \((?:(\w{3}).? (\d{1,2})(?:-(\d{1,2}))?)\)",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private const string NewsFeedUrl = "https://na.finalfantasyxiv.com/lodestone/news/news.xml";
 
     private static readonly Regex MaintenanceTimeRegex =
-        new(@"\[Date & Time\]<br>[\n\r]+([\w\d,:. ]+) to ([\w\d,:. ]+) \((\w{3})\)",
+        new(@"\[Date & Time\][\n\r]+([\w\d,:. ]+) to ([\w\d,:. ]+) \((\w{3})\)",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private const string LODESTONE_BASE_URL = "https://na.finalfantasyxiv.com";
-    private const string LODESTONE_MAINTENANCE_LIST_URL = LODESTONE_BASE_URL + "/lodestone/news/category/2";
-
     public static HashSet<MaintenanceInfo> MaintenanceList { get; } = new();
-    private readonly HttpClient _http;
-
-    public LodestoneMaintenanceService()
-    {
-        _http = new HttpClient();
-        _http.DefaultRequestHeaders.Add("User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36"
-        );
-    }
 
     public MaintenanceInfo? GetMaintenanceAt(DateTime time)
     {
         time = TimeZoneInfo.ConvertTimeToUtc(time);
-        foreach (var maint in MaintenanceList)
-        {
-            // return this maintenance if it's active at the given time
-            if (maint.IsActiveAt(time))
-            {
-                return maint;
-            }
-        }
+        return MaintenanceList.FirstOrDefault(maint => maint.IsActiveAt(time));
+    }
 
-        return null;
+    public MaintenanceInfo? GetMaintenanceNear(DateTime time)
+    {
+        time = TimeZoneInfo.ConvertTimeToUtc(time);
+        return MaintenanceList
+            .OrderBy(maint => maint.StartTime)
+            .FirstOrDefault(maint => time >= maint.StartTime.AddHours(-1) && time <= maint.EndTime.AddHours(2));
+    }
+
+    public MaintenanceInfo? GetNextMaintenance(DateTime time)
+    {
+        time = TimeZoneInfo.ConvertTimeToUtc(time);
+        return MaintenanceList
+            .Where(maint => maint.EndTime >= time)
+            .OrderBy(maint => maint.StartTime)
+            .FirstOrDefault();
     }
 
     public async Task Poll()
     {
-        var maintList = await GetRelevantMaintenanceList();
-        var maintInfo = await ProcessMaintenanceList(maintList);
+        if (!http.DefaultRequestHeaders.UserAgent.Any()) {
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; ThaliakPoller/1.0)");
+        }
+
+        var xml = await http.GetStringAsync(NewsFeedUrl);
+        var maintInfo = ParseMaintenanceInfos(xml, DateTime.UtcNow);
         MaintenanceList.UnionWith(maintInfo);
 
-        // cull really old maintenance periods that we don't care about anymore
         MaintenanceList.RemoveWhere(mi => DateTime.UtcNow - mi.EndTime > TimeSpan.FromDays(7));
     }
 
-    public async Task<List<string>> GetRelevantMaintenanceList()
+    public static IReadOnlyCollection<MaintenanceInfo> ParseMaintenanceInfos(string xml, DateTime nowUtc)
     {
-        var response = await _http.GetAsync(LODESTONE_MAINTENANCE_LIST_URL);
-        var responseString = await response.Content.ReadAsStringAsync();
-
-        var matches = MaintenanceArticleRegex.Matches(responseString);
-
-        var today = DateTime.UtcNow.Date;
-        var list = new List<string>();
-        foreach (Match match in matches)
-        {
-            var url = LODESTONE_BASE_URL + match.Groups[1];
-            var tag = match.Groups[2].ToString();
-            var title = match.Groups[3].ToString();
-
-            // we only care about maintenances
-            if (tag != "Maintenance")
-            {
-                continue;
-            }
-
-            // and specifically those on all worlds (which would indicate a patch)
-            var titleMatch = MaintenanceTitleRegex.Match(title);
-            if (!titleMatch.Success)
-            {
-                continue;
-            }
-
-            var dom = titleMatch.Groups[4].ToString() == "" ? titleMatch.Groups[3] : titleMatch.Groups[4];
-            var maintenanceDate = Convert.ToDateTime(titleMatch.Groups[2] + " " + dom + ", " + today.Year);
-            // just in case of a new year
-            if (today.Month == 12 && maintenanceDate.Month == 1)
-            {
-                maintenanceDate = maintenanceDate.AddYears(1);
-            }
-
-            // and we only care about maintenances from today-1 to the future
-            if (today - maintenanceDate > TimeSpan.FromDays(1))
-            {
-                continue;
-            }
-
-            Log.Information(
-                "Found maintenance article: url = {url}, tag = {tag}, title = {title}, date = {maintenanceDate}", url,
-                tag, title, maintenanceDate);
-            list.Add(url);
+        var feed = DeserializeFeed(xml);
+        if (feed?.Entry is null) {
+            return [];
         }
 
-        return list;
+        return feed.Entry
+            .Where(entry => string.Equals(entry.Category?.Term, "Maintenance", StringComparison.OrdinalIgnoreCase))
+            .Where(entry => entry.Title.Contains("All Worlds", StringComparison.OrdinalIgnoreCase) &&
+                            entry.Title.Contains("Maintenance", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => TryCreateMaintenanceInfo(entry, nowUtc))
+            .Where(info => info is not null)
+            .Cast<MaintenanceInfo>()
+            .ToArray();
     }
 
-    public async Task<IEnumerable<MaintenanceInfo>> ProcessMaintenanceList(List<string> urlList)
+    private static MaintenanceInfo? TryCreateMaintenanceInfo(LodestoneFeedEntry entry, DateTime nowUtc)
     {
-        var infos = await Task.WhenAll(urlList.Select(ScanMaintenancePage));
-        return infos.Where(info => info != null)!;
-    }
-
-    public async Task<MaintenanceInfo?> ScanMaintenancePage(string url)
-    {
-        var response = await _http.GetAsync(url);
-        var responseString = await response.Content.ReadAsStringAsync();
-
-        var timeMatch = MaintenanceTimeRegex.Match(responseString);
-        if (!timeMatch.Success)
-        {
-            Log.Information(responseString);
-            Log.Error("Could not find time for maintenance article with url {url}", url);
+        var text = entry.Content?.GetText() ?? string.Empty;
+        var timeMatch = MaintenanceTimeRegex.Match(text);
+        if (!timeMatch.Success) {
+            Log.Warning("Could not find maintenance time for Lodestone feed entry {Title}", entry.Title);
             return null;
         }
 
-        var startTime = Convert.ToDateTime(SanitizeDateTime(timeMatch.Groups[1].ToString()));
-        var endTime = Convert.ToDateTime(SanitizeDateTime(timeMatch.Groups[2].ToString()));
-        var timezone = GetTimeZone(timeMatch.Groups[3].ToString());
-
-        var startTimeUtc = TimeZoneInfo.ConvertTimeToUtc(startTime, timezone);
-        var endTimeUtc = TimeZoneInfo.ConvertTimeToUtc(endTime, timezone);
-
-        Log.Information("Maintenance starts at {startTime} UTC and ends at {endTime} UTC", startTimeUtc, endTimeUtc);
-        return new MaintenanceInfo(startTimeUtc, endTimeUtc);
-    }
-
-    private string SanitizeDateTime(string dateTime)
-    {
-        return dateTime.Replace("a.m.", "am").Replace("p.m.", "pm");
-    }
-
-    private TimeZoneInfo GetTimeZone(string tzString)
-    {
-        if (tzString is "PDT" or "PST")
+        var zone = timeMatch.Groups[3].Value;
+        var utcOffset = zone switch
         {
-            return TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+            "PDT" => TimeSpan.FromHours(-7),
+            "PST" => TimeSpan.FromHours(-8),
+            _ => throw new InvalidDataException($"Unknown Lodestone maintenance timezone: {zone}")
+        };
+
+        var start = ParseFeedMaintenanceTime(timeMatch.Groups[1].Value);
+        var end = ParseFeedMaintenanceTime(timeMatch.Groups[2].Value, start);
+        var startUtc = new DateTimeOffset(start, utcOffset).UtcDateTime;
+        var endUtc = new DateTimeOffset(end, utcOffset).UtcDateTime;
+        if (endUtc < startUtc) {
+            endUtc = endUtc.AddDays(1);
         }
 
-        throw new Exception("Unknown timezone: " + tzString);
+        return endUtc < nowUtc.AddDays(-1)
+            ? null
+            : new MaintenanceInfo(startUtc, endUtc, entry.Title);
+    }
+
+    private static DateTime ParseFeedMaintenanceTime(string value, DateTime? defaultDate = null)
+    {
+        string[] formats =
+        [
+            "MMM d, yyyy h:mm tt",
+            "MMMM d, yyyy h:mm tt",
+            "h:mm tt",
+            "hh:mm tt",
+            "h tt",
+            "hh tt"
+        ];
+
+        var sanitized = value.Replace(".", string.Empty)
+            .Replace("from ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("at ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        if (!DateTime.TryParseExact(sanitized, formats, CultureInfo.GetCultureInfo("en-US"),
+                DateTimeStyles.NoCurrentDateDefault, out var parsed)) {
+            throw new FormatException($"Could not parse Lodestone maintenance time: {value}");
+        }
+
+        if (parsed.Year == 1 && defaultDate is not null) {
+            parsed = new DateTime(defaultDate.Value.Year, defaultDate.Value.Month, defaultDate.Value.Day,
+                parsed.Hour, parsed.Minute, parsed.Second);
+        }
+
+        return parsed;
+    }
+
+    private static LodestoneFeed? DeserializeFeed(string xml)
+    {
+        var serializer = new XmlSerializer(typeof(LodestoneFeed));
+        using var reader = new StringReader(xml);
+        return serializer.Deserialize(reader) as LodestoneFeed;
+    }
+
+    [XmlRoot(ElementName = "feed", Namespace = "http://www.w3.org/2005/Atom")]
+    public sealed class LodestoneFeed
+    {
+        private const string AtomNamespace = "http://www.w3.org/2005/Atom";
+
+        [XmlElement(ElementName = "entry", Namespace = AtomNamespace)]
+        public List<LodestoneFeedEntry> Entry { get; set; } = [];
+    }
+
+    public sealed class LodestoneFeedEntry
+    {
+        private const string AtomNamespace = "http://www.w3.org/2005/Atom";
+
+        [XmlElement(ElementName = "title", Namespace = AtomNamespace)]
+        public string Title { get; set; } = string.Empty;
+
+        [XmlElement(ElementName = "category", Namespace = AtomNamespace)]
+        public LodestoneFeedCategory? Category { get; set; }
+
+        [XmlElement(ElementName = "content", Namespace = AtomNamespace)]
+        public LodestoneFeedContent? Content { get; set; }
+    }
+
+    public sealed class LodestoneFeedCategory
+    {
+        [XmlAttribute(AttributeName = "term")]
+        public string Term { get; set; } = string.Empty;
+    }
+
+    public sealed class LodestoneFeedContent
+    {
+        [XmlText]
+        public string Text { get; set; } = string.Empty;
+
+        public string GetText()
+        {
+            var text = Text.Replace("<br>", "\n", StringComparison.OrdinalIgnoreCase);
+            text = Regex.Replace(text, @"(\n)\1+", "$1");
+            text = Regex.Replace(text, @"^\n+|\n+$", string.Empty);
+            return text;
+        }
     }
 }

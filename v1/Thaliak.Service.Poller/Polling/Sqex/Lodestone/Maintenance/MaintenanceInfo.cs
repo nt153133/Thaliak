@@ -4,11 +4,13 @@ public class MaintenanceInfo : IEquatable<MaintenanceInfo>
 {
     public DateTime StartTime { get; }
     public DateTime EndTime { get; }
+    public string? Title { get; }
 
-    public MaintenanceInfo(DateTime startTime, DateTime endTime)
+    public MaintenanceInfo(DateTime startTime, DateTime endTime, string? title = null)
     {
         StartTime = startTime;
         EndTime = endTime;
+        Title = title;
     }
 
     public bool IsActiveAt(DateTime time)

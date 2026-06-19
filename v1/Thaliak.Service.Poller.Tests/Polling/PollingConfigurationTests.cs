@@ -1,0 +1,23 @@
+using Microsoft.Extensions.Configuration;
+using Thaliak.Service.Poller.Polling;
+using Xunit;
+
+namespace Thaliak.Service.Poller.Tests.Polling;
+
+public class PollingConfigurationTests
+{
+    [Fact]
+    public void ShouldRegisterKoreaChecks_WhenDisableFlagTrue_ReturnsFalse()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PollingConfiguration.DisableKoreaChecksKey] = "true"
+            })
+            .Build();
+
+        var shouldRegister = PollingConfiguration.ShouldRegisterKoreaChecks(configuration);
+
+        Assert.False(shouldRegister);
+    }
+}

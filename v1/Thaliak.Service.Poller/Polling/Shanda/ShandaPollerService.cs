@@ -38,7 +38,7 @@ public class ShandaPollerService(ThaliakContext db, HttpClient client, PatchReco
             if (pendingPatches.Length > 0)
             {
                 Log.Information("Discovered CN game patches: {0}", pendingPatches);
-                reconciliationService.Reconcile(gameRepo, pendingPatches);
+                await reconciliationService.ReconcileAsync(gameRepo, pendingPatches);
             }
             else
             {

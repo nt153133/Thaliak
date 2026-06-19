@@ -18,7 +18,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="AngleSharp" Version="1.1.2" />
         <PackageReference Include="Downloader" Version="2.3.5" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.6">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
         <PackageReference Include="Discord.Net.Webhook" Version="3.12.0" />
         <PackageReference Include="Quartz.Extensions.Hosting" Version="3.7.0" />

@@ -2,10 +2,15 @@ namespace Thaliak.Service.Poller.Polling.Sqex;
 
 internal class SqexFutureScrapeJob : ScheduledPollJob<SqexFutureScraperService>
 {
-    public SqexFutureScrapeJob(SqexFutureScraperService poller) : base(poller) { }
+    private readonly PollingScheduleService _scheduleService;
+
+    public SqexFutureScrapeJob(SqexFutureScraperService poller, PollingScheduleService scheduleService) : base(poller)
+    {
+        _scheduleService = scheduleService;
+    }
 
     protected override DateTime GetNextExecutionTime()
     {
-        return DateTime.UtcNow.AddSeconds(Random.Next(25, 35));
+        return _scheduleService.GetNextSqexFutureScrapePoll(DateTime.UtcNow);
     }
 }

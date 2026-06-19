@@ -60,6 +60,12 @@ public class DownloaderService : BackgroundService
                 continue;
             }
 
+            var destinationDirectory = Path.GetDirectoryName(dest);
+            if (!string.IsNullOrEmpty(destinationDirectory))
+            {
+                Directory.CreateDirectory(destinationDirectory);
+            }
+
             Log.Information("Starting download of URL {0} to {1}", job.Url, dest);
             await _downloadService.DownloadFileTaskAsync(job.Url, dest);
         }

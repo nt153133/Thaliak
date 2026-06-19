@@ -109,7 +109,7 @@ public class SqexPollerService : IPoller
         if (bootPatches.Length > 0)
         {
             Log.Information("Discovered JP boot patches: {0}", bootPatches);
-            _reconciliationService.Reconcile(repo, bootPatches);
+            await _reconciliationService.ReconcileAsync(repo, bootPatches);
 
             if (gameDir != null)
             {
@@ -270,7 +270,7 @@ public class SqexPollerService : IPoller
         if (loginResult.PendingPatches.Length > 0)
         {
             Log.Information("Discovered JP game patches: {0}", loginResult.PendingPatches);
-            _reconciliationService.Reconcile(repo, loginResult.PendingPatches);
+            await _reconciliationService.ReconcileAsync(repo, loginResult.PendingPatches);
         }
         else
         {

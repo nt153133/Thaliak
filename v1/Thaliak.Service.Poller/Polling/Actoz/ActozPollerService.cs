@@ -38,7 +38,7 @@ public class ActozPollerService(ThaliakContext db, HttpClient client, PatchRecon
             if (pendingPatches.Length > 0)
             {
                 Log.Information("Discovered KR game patches: {0}", pendingPatches);
-                reconciliationService.Reconcile(gameRepo, pendingPatches);
+                await reconciliationService.ReconcileAsync(gameRepo, pendingPatches);
             }
             else
             {

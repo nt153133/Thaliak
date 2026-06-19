@@ -1,18 +1,21 @@
 using System.Net.Security;
 using Downloader;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Quartz;
 using Serilog;
 using Serilog.Events;
 using Thaliak.Common.Database;
 using Thaliak.Service.Poller.Download;
+using Thaliak.Service.Poller.Notifications;
 using Thaliak.Service.Poller.Polling;
 using Thaliak.Service.Poller.Polling.Actoz;
 using Thaliak.Service.Poller.Polling.Shanda;
 using Thaliak.Service.Poller.Polling.Sqex;
 using Thaliak.Service.Poller.Polling.Sqex.Lodestone.Maintenance;
+using Thaliak.Service.Poller.Polling.TraditionalChinese;
 using Thaliak.Service.Poller.Util;
+using Thaliak.Service.Poller.Webhooks;
 
 // set up logging
 using var log = new LoggerConfiguration()
@@ -41,15 +44,24 @@ var host = Host.CreateDefaultBuilder(args)
             }
         }));
         services.AddHostedService<DownloaderService>();
+        services.AddHostedService<PatchAlertDispatcherHostedService>();
 
         services.AddScoped<LodestoneMaintenanceService>();
+        services.AddScoped<TraditionalChineseMaintenanceService>();
+        services.AddScoped<PollingScheduleService>();
         services.AddScoped<PatchReconciliationService>();
+        services.AddScoped<PatchAlertQueueService>();
+        services.AddScoped<PatchAlertDispatchService>();
+        services.AddScoped<PatchAlertNotificationService>();
+        services.AddScoped<IPatchDiscordAlertSender, DiscordWebhookPatchAlertSender>();
 
         services.AddScoped<SqexFutureScraperService>();
 
         services.AddScoped<SqexPollerService>();
         services.AddScoped<ActozPollerService>();
         services.AddScoped<ShandaPollerService>();
+        services.AddScoped<TraditionalChinesePollerService>();
+        services.AddScoped<JsonWebhookService>();
 
         services.AddScoped<HttpClient>(_ =>
         {
@@ -77,9 +89,11 @@ var host = Host.CreateDefaultBuilder(args)
         // set up the db context
         services.AddDbContext<ThaliakContext>(o =>
         {
-            o.UseNpgsql(ctx.Configuration.GetConnectionString("pg"),
+            var connectionString = ctx.Configuration.GetConnectionString("sqlite") ?? "Data Source=/data/thaliak.db";
+            EnsureSqliteDirectoryExists(connectionString);
+
+            o.UseSqlite(connectionString,
                 co => co.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
-                .ReplaceService<IHistoryRepository, CamelCaseHistoryContext>()
                 .UseSnakeCaseNamingConvention();
             o.LogTo(Log.Verbose);
         });
@@ -89,14 +103,22 @@ var host = Host.CreateDefaultBuilder(args)
             q.UseMicrosoftDependencyInjectionJobFactory();
 
             q.AddPollJob<LodestoneMaintenancePollJob, LodestoneMaintenanceService>();
+            q.AddPollJob<TraditionalChineseMaintenancePollJob, TraditionalChineseMaintenanceService>();
 
-            // start the SE poller jobs at a slight delay to allow the lodestone poller job to work first
-            q.AddPollJob<SqexLoginPollJob, SqexPollerService>(DateTime.UtcNow.AddSeconds(15));
-            q.AddPollJob<SqexFutureScrapeJob, SqexFutureScraperService>(DateTime.UtcNow.AddSeconds(15));
+            // start patch pollers at a slight delay to allow maintenance pollers to work first
+            var delayedPatchStart = DateTime.UtcNow.AddSeconds(30);
+            q.AddPollJob<SqexLoginPollJob, SqexPollerService>(delayedPatchStart);
+            q.AddPollJob<SqexFutureScrapeJob, SqexFutureScraperService>(delayedPatchStart);
 
-            // KR/CN can start instantly
-            q.AddPollJob<ActozPatchListPollJob, ActozPollerService>();
-            q.AddPollJob<ShandaPatchListPollJob, ShandaPollerService>();
+            // KR/CN/TC can start instantly
+            if (PollingConfiguration.ShouldRegisterKoreaChecks(ctx.Configuration)) {
+                q.AddPollJob<ActozPatchListPollJob, ActozPollerService>(delayedPatchStart);
+            } else {
+                Log.Information("Korean patch checks disabled by {ConfigKey}", PollingConfiguration.DisableKoreaChecksKey);
+            }
+
+            q.AddPollJob<ShandaPatchListPollJob, ShandaPollerService>(delayedPatchStart);
+            q.AddPollJob<TraditionalChinesePatchListPollJob, TraditionalChinesePollerService>(delayedPatchStart);
         });
 
         services.AddQuartzHostedService(o => { o.WaitForJobsToComplete = true; });
@@ -113,3 +135,17 @@ using (var scope = host.Services.CreateScope())
 
 // go!
 await host.RunAsync();
+
+static void EnsureSqliteDirectoryExists(string connectionString)
+{
+    var builder = new SqliteConnectionStringBuilder(connectionString);
+    var dataSource = builder.DataSource;
+    if (dataSource is null || string.IsNullOrWhiteSpace(dataSource) || dataSource == ":memory:") {
+        return;
+    }
+
+    var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
+    if (directory is not null) {
+        Directory.CreateDirectory(directory);
+    }
+}

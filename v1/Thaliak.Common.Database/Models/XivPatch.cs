@@ -8,9 +8,11 @@ namespace Thaliak.Common.Database.Models;
 /// Represents information about a single XIV .patch file.
 /// </summary>
 [Index(nameof(RepoVersionId))]
+[Index(nameof(NotificationQueuedAtUtc))]
+[Index(nameof(NotificationSentAtUtc))]
 public class XivPatch
 {
-    private static readonly Regex PatchUrlRegex = new(@"(?:https?:\/\/(.+?)\/)?(?:ff\/)?((?:game|boot)\/.+)\/(.*)",
+    private static readonly Regex PatchUrlRegex = new(@"(?:https?:\/\/(.+?)\/)?(?:ff\/)?((?:(?:game|boot)\/.+)|(?:ffxiv\/.+))\/(.*)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -87,4 +89,19 @@ public class XivPatch
     public long? HashBlockSize { get; set; }
 
     public string[]? Hashes { get; set; }
+
+    /// <summary>
+    /// The time this patch became eligible for a delayed notification batch.
+    /// </summary>
+    public DateTime? NotificationQueuedAtUtc { get; set; }
+
+    /// <summary>
+    /// The time a notification batch containing this patch was attempted.
+    /// </summary>
+    public DateTime? NotificationSentAtUtc { get; set; }
+
+    /// <summary>
+    /// The discovery type that made this patch notification-eligible.
+    /// </summary>
+    public string? NotificationDiscoveryType { get; set; }
 }

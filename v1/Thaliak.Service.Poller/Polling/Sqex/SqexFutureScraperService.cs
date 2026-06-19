@@ -96,7 +96,7 @@ public class SqexFutureScraperService : ScraperBase
 
         // if any patches were discovered, reconcile them
         if (discovered.Count > 0) {
-            _reconciliationService.Reconcile(
+            await _reconciliationService.ReconcileAsync(
                 _db.Repositories.First(r => r.Id == SqexPollerService.GameRepoId),
                 discovered.ToArray(), PatchDiscoveryType.Scraped
             );

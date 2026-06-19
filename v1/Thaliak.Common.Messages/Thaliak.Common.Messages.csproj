@@ -9,9 +9,4 @@
     <ItemGroup>
         <ProjectReference Include="..\Thaliak.Common.Database\Thaliak.Common.Database.csproj"/>
     </ItemGroup>
-
-    <ItemGroup>
-        <PackageReference Include="StackExchange.Redis" Version="2.7.4" />
-    </ItemGroup>
-
 </Project>

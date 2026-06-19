@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Thaliak.Common.Database;
 
@@ -10,9 +11,11 @@ using Thaliak.Common.Database;
 namespace Thaliak.Common.Database.Migrations
 {
     [DbContext(typeof(ThaliakContext))]
-    partial class ThaliakContextModelSnapshot : ModelSnapshot
+    [Migration("20260611234836_InitialSqlite")]
+    partial class InitialSqlite
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.6");
@@ -347,18 +350,6 @@ namespace Thaliak.Common.Database.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("local_storage_path");
 
-                    b.Property<string>("NotificationDiscoveryType")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("notification_discovery_type");
-
-                    b.Property<DateTime?>("NotificationQueuedAtUtc")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("notification_queued_at_utc");
-
-                    b.Property<DateTime?>("NotificationSentAtUtc")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("notification_sent_at_utc");
-
                     b.Property<string>("RemoteOriginPath")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -374,12 +365,6 @@ namespace Thaliak.Common.Database.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_patches");
-
-                    b.HasIndex("NotificationQueuedAtUtc")
-                        .HasDatabaseName("ix_patches_notification_queued_at_utc");
-
-                    b.HasIndex("NotificationSentAtUtc")
-                        .HasDatabaseName("ix_patches_notification_sent_at_utc");
 
                     b.HasIndex("RepoVersionId")
                         .HasDatabaseName("ix_patches_repo_version_id");

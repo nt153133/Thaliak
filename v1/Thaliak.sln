@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Thaliak.Common.Messages", "
 EndProject
 Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Thaliak.Web", "..\web\Thaliak.Web.shproj", "{194898E2-6FA4-4EAE-AE13-C846D8926488}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Thaliak.Service.Poller.Tests", "Thaliak.Service.Poller.Tests\Thaliak.Service.Poller.Tests.csproj", "{D50C23B3-F2CA-4B05-A1A5-A9CE27D600F6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,6 +28,10 @@ Global
 		{E2351FCE-C7AC-4413-9C69-30979D535062}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2351FCE-C7AC-4413-9C69-30979D535062}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E2351FCE-C7AC-4413-9C69-30979D535062}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D50C23B3-F2CA-4B05-A1A5-A9CE27D600F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D50C23B3-F2CA-4B05-A1A5-A9CE27D600F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D50C23B3-F2CA-4B05-A1A5-A9CE27D600F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D50C23B3-F2CA-4B05-A1A5-A9CE27D600F6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 	EndGlobalSection
