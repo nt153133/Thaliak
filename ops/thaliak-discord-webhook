@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import json
+import os
+import sqlite3
+import sys
+import urllib.error
+import urllib.request
+
+DB_PATH = os.environ.get("THALIAK_DB", "/srv/thaliak/db/thaliak.db")
+
+
+def fail(message, code=1):
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def connect():
+    if not os.path.exists(DB_PATH):
+        fail(f"Database not found at {DB_PATH}. Start Thaliak once so migrations create it, then rerun this helper.")
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("select 1 from discord_hooks limit 1")
+    except sqlite3.Error as exc:
+        fail(f"Database exists but discord_hooks is not ready: {exc}")
+
+    return conn
+
+
+def mask_url(url):
+    if not url:
+        return ""
+    if len(url) <= 18:
+        return "<hidden>"
+    return f"{url[:12]}...{url[-6:]}"
+
+
+def cmd_list(_args):
+    with connect() as conn:
+        rows = conn.execute("select id, name, url from discord_hooks order by id").fetchall()
+
+    if not rows:
+        print("No Discord webhooks configured.")
+        return
+
+    for row in rows:
+        name = row["name"] or "(unnamed)"
+        print(f"{row['id']}: {name}  {mask_url(row['url'])}")
+
+
+def cmd_add(args):
+    name = args.name or input("Display name (optional): ").strip() or None
+    url = args.url
+    if not url:
+        url = getpass.getpass("Discord webhook URL (hidden): ").strip()
+
+    if not url.startswith("https://") or "discord" not in url.lower():
+        fail("That does not look like a Discord webhook URL.")
+
+    with connect() as conn:
+        cur = conn.execute("insert into discord_hooks (url, name) values (?, ?)", (url, name))
+        conn.commit()
+        print(f"Added Discord webhook id {cur.lastrowid}.")
+
+
+def cmd_remove(args):
+    with connect() as conn:
+        cur = conn.execute("delete from discord_hooks where id = ?", (args.id,))
+        conn.commit()
+
+    if cur.rowcount == 0:
+        fail(f"No webhook exists with id {args.id}.")
+
+    print(f"Removed Discord webhook id {args.id}.")
+
+
+def send_test(url, name):
+    payload = {
+        "username": "Thaliak",
+        "content": f"Thaliak Discord webhook test for {name or 'unnamed hook'}.",
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Thaliak webhook helper",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            if response.status < 200 or response.status >= 300:
+                fail(f"Discord returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        fail(f"Discord returned HTTP {exc.code}: {detail}")
+    except urllib.error.URLError as exc:
+        fail(f"Could not call Discord webhook: {exc}")
+
+
+def cmd_test(args):
+    with connect() as conn:
+        row = conn.execute("select id, name, url from discord_hooks where id = ?", (args.id,)).fetchone()
+
+    if row is None:
+        fail(f"No webhook exists with id {args.id}.")
+
+    send_test(row["url"], row["name"])
+    print(f"Sent test message to webhook id {args.id}.")
+
+
+def main():
+    global DB_PATH
+
+    parser = argparse.ArgumentParser(description="Manage Thaliak Discord webhook rows in SQLite.")
+    parser.add_argument("--db", default=DB_PATH, help="SQLite database path")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_list = sub.add_parser("list", help="List configured Discord webhooks")
+    p_list.set_defaults(func=cmd_list)
+
+    p_add = sub.add_parser("add", help="Add a Discord webhook")
+    p_add.add_argument("--name", help="Optional display name")
+    p_add.add_argument("--url", help="Webhook URL. Omit this to enter it hidden at the prompt.")
+    p_add.set_defaults(func=cmd_add)
+
+    p_remove = sub.add_parser("remove", help="Remove a Discord webhook by id")
+    p_remove.add_argument("id", type=int)
+    p_remove.set_defaults(func=cmd_remove)
+
+    p_test = sub.add_parser("test", help="Send a simple test message by id")
+    p_test.add_argument("id", type=int)
+    p_test.set_defaults(func=cmd_test)
+
+    args = parser.parse_args()
+    DB_PATH = args.db
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

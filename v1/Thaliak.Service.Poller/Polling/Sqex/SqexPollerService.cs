@@ -59,7 +59,7 @@ public class SqexPollerService : IPoller
             throw new NoValidAccountException();
         }
 
-        Log.Information("Using account {0} ({1})", account.Id, account.Username);
+        Log.Information("Using account {0}", account.Id);
         return account;
     }
 
@@ -206,6 +206,19 @@ public class SqexPollerService : IPoller
 
         Log.Information("Waiting for {0} patches to be downloaded", patches.Length);
 
+        if (!IsDownloadQueueEnabled())
+        {
+            Log.Information("General download queue is disabled; downloading required boot patches directly");
+            foreach (var patch in patches)
+            {
+                var patchFile = GetPatchFileInfo(patch);
+                if (!patchFile.Exists)
+                {
+                    await DownloadRequiredPatchAsync(patch, patchFile, cancellationToken);
+                }
+            }
+        }
+
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -231,6 +244,28 @@ public class SqexPollerService : IPoller
         }
 
         throw new TimeoutException($"Timeout waiting for patches to download after {timeoutSeconds} seconds");
+    }
+
+    private async Task DownloadRequiredPatchAsync(PatchListEntry patch, FileInfo patchFile,
+        CancellationToken cancellationToken)
+    {
+        Log.Information("Downloading required boot patch {PatchUrl} to {PatchPath}", patch.Url, patchFile.FullName);
+
+        if (patchFile.Directory is not null)
+        {
+            patchFile.Directory.Create();
+        }
+
+        await using var remote = await _client.GetStreamAsync(patch.Url, cancellationToken);
+        await using var local = File.Create(patchFile.FullName);
+        await remote.CopyToAsync(local, cancellationToken);
+    }
+
+    private static bool IsDownloadQueueEnabled()
+    {
+        var enableDownloads = Environment.GetEnvironmentVariable("ENABLE_DOWNLOADS");
+        return !string.IsNullOrEmpty(enableDownloads) &&
+               enableDownloads.Equals("true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

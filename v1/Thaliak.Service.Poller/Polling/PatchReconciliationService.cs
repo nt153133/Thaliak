@@ -42,6 +42,9 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
                 var alert = localPatch.FirstOffered == null &&
                             discoveryType == PatchDiscoveryType.Offered;
                 UpdateExistingPatchData(now, localPatch, remotePatch, discoveryType);
+                if (discoveryType == PatchDiscoveryType.Offered) {
+                    DownloaderService.AddToQueue(new DownloadJob(localPatch));
+                }
 
                 if (alert) {
                     newPatchList.Add(localPatch);
@@ -80,6 +83,7 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
         Log.Information("Logging upgrade path data for repo {repoId}", effectiveRepoId);
 
         remotePatches = remotePatches.OrderBy(p => p.VersionId);
+        var recordedPaths = new HashSet<(int RepoVersionId, int? PreviousRepoVersionId)>();
 
         PatchListEntry? previousPatch = null;
         foreach (var remotePatch in remotePatches) {
@@ -108,8 +112,16 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
                 previousRepoVersionId = dbPreviousVersion.Id;
             }
 
-            var path = db.UpgradePaths.FirstOrDefault(p =>
-                p.RepoVersionId == dbVersion.Id && p.PreviousRepoVersionId == previousRepoVersionId);
+            var pathKey = (dbVersion.Id, previousRepoVersionId);
+            if (!recordedPaths.Add(pathKey)) {
+                previousPatch = remotePatch;
+                continue;
+            }
+
+            var path = db.UpgradePaths.Local.FirstOrDefault(p =>
+                           p.RepoVersionId == dbVersion.Id && p.PreviousRepoVersionId == previousRepoVersionId) ??
+                       db.UpgradePaths.FirstOrDefault(p =>
+                           p.RepoVersionId == dbVersion.Id && p.PreviousRepoVersionId == previousRepoVersionId);
             if (path is null) {
                 db.UpgradePaths.Add(new XivUpgradePath
                 {

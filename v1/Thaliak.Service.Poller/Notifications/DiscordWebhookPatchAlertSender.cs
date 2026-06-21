@@ -20,7 +20,8 @@ public sealed class DiscordWebhookPatchAlertSender(ThaliakContext db) : IPatchDi
         }
 
         foreach (var hookEntry in discordHooks) {
-            Log.Information("Sending batched Discord patch alert to webhook: {@hookEntry}", hookEntry);
+            Log.Information("Sending batched Discord patch alert to webhook {WebhookId} ({WebhookName})",
+                hookEntry.Id, hookEntry.Name ?? "unnamed");
 
             try {
                 var hookClient = new DiscordWebhookClient(hookEntry.Url);
