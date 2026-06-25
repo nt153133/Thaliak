@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using Serilog;
@@ -46,6 +47,16 @@ public sealed class TraditionalChineseMaintenanceService(HttpClient http) : IPol
         "\u5967\u6c40"
     ];
 
+    private static readonly Regex[] MaintenanceDateRegexes =
+    [
+        new(@"(?<!\d)(?<year>20\d{2})[/-](?<month>0?[1-9]|1[0-2])[/-](?<day>0?[1-9]|[12]\d|3[01])(?!\d)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant),
+        new(@"(?<!\d)(?<month>0?[1-9]|1[0-2])\s*/\s*(?<day>0?[1-9]|[12]\d|3[01])(?!\d)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant),
+        new(@"(?<!\d)(?<month>0?[1-9]|1[0-2])\s*\u6708\s*(?<day>0?[1-9]|[12]\d|3[01])\s*\u65e5",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant)
+    ];
+
     public static HashSet<DateOnly> MaintenanceDatesTaiwan { get; } = [];
 
     public bool HasMaintenanceTodayOrTomorrow(DateTime nowUtc)
@@ -63,8 +74,9 @@ public sealed class TraditionalChineseMaintenanceService(HttpClient http) : IPol
 
         var notices = await GetMaintenanceNoticesAsync();
         foreach (var notice in notices) {
-            MaintenanceDatesTaiwan.Add(notice.PublishedDate);
-            MaintenanceDatesTaiwan.Add(notice.PublishedDate.AddDays(1));
+            foreach (var date in GetMaintenancePollingDates(notice)) {
+                MaintenanceDatesTaiwan.Add(date);
+            }
         }
 
         var taiwanToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow,
@@ -92,10 +104,31 @@ public sealed class TraditionalChineseMaintenanceService(HttpClient http) : IPol
                 continue;
             }
 
-            notices.Add(new TwMaintenanceNotice(item.Id, item.Title, item.Url, item.PublishedDate));
+            var maintenanceDate = TryParseMaintenanceDateTaiwan(item.Title, articleText, item.PublishedDate,
+                out var parsedDate)
+                ? parsedDate
+                : (DateOnly?) null;
+
+            notices.Add(new TwMaintenanceNotice(item.Id, item.Title, item.Url, item.PublishedDate, maintenanceDate));
         }
 
         return notices;
+    }
+
+    public static IReadOnlyList<DateOnly> GetMaintenancePollingDates(TwMaintenanceNotice notice)
+    {
+        var maintenanceDate = notice.MaintenanceDate ?? notice.PublishedDate;
+        return [maintenanceDate, maintenanceDate.AddDays(1)];
+    }
+
+    public static bool TryParseMaintenanceDateTaiwan(
+        string title,
+        string articleText,
+        DateOnly publishedDate,
+        out DateOnly maintenanceDate)
+    {
+        return TryParseMaintenanceDate(title, publishedDate, out maintenanceDate) ||
+               TryParseMaintenanceDate(articleText, publishedDate, out maintenanceDate);
     }
 
     public static bool IsMaintenanceNotice(string title, string articleText)
@@ -164,7 +197,50 @@ public sealed class TraditionalChineseMaintenanceService(HttpClient http) : IPol
         return keywords.Any(keyword => text.Contains(keyword, StringComparison.Ordinal));
     }
 
+    private static bool TryParseMaintenanceDate(string text, DateOnly publishedDate, out DateOnly maintenanceDate)
+    {
+        foreach (var regex in MaintenanceDateRegexes) {
+            foreach (Match match in regex.Matches(text)) {
+                if (!TryCreateMaintenanceDate(match, publishedDate, out maintenanceDate)) {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        maintenanceDate = default;
+        return false;
+    }
+
+    private static bool TryCreateMaintenanceDate(Match match, DateOnly publishedDate, out DateOnly maintenanceDate)
+    {
+        var year = match.Groups["year"].Success
+            ? int.Parse(match.Groups["year"].Value, CultureInfo.InvariantCulture)
+            : publishedDate.Year;
+        var month = int.Parse(match.Groups["month"].Value, CultureInfo.InvariantCulture);
+        var day = int.Parse(match.Groups["day"].Value, CultureInfo.InvariantCulture);
+
+        try {
+            maintenanceDate = new DateOnly(year, month, day);
+        } catch (ArgumentOutOfRangeException) {
+            maintenanceDate = default;
+            return false;
+        }
+
+        if (!match.Groups["year"].Success && maintenanceDate < publishedDate.AddDays(-30)) {
+            maintenanceDate = maintenanceDate.AddYears(1);
+        }
+
+        return true;
+    }
+
     private sealed record TwNewsListItem(string Id, string Title, Uri Url, DateOnly PublishedDate);
 }
 
-public sealed record TwMaintenanceNotice(string Id, string Title, Uri Url, DateOnly PublishedDate);
+public sealed record TwMaintenanceNotice(
+    string Id,
+    string Title,
+    Uri Url,
+    DateOnly PublishedDate,
+    DateOnly? MaintenanceDate);
