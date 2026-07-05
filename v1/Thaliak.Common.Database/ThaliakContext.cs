@@ -15,6 +15,7 @@ public class ThaliakContext : DbContext
     public DbSet<XivRepoVersion> RepoVersions { get; set; }
     public DbSet<XivFile> Files { get; set; }
     public DbSet<DiscordHookEntry> DiscordHooks { get; set; }
+    public DbSet<XivInstallationState> InstallationStates { get; set; }
 
     public ThaliakContext(DbContextOptions options) : base(options) { }
 
@@ -109,6 +110,22 @@ public class ThaliakContext : DbContext
         builder.Entity<XivPatch>()
             .Property(r => r.LocalStoragePath)
             .UsePropertyAccessMode(PropertyAccessMode.Property);
+
+        builder.Entity<XivInstallationState>()
+            .HasOne(state => state.Repository)
+            .WithOne()
+            .HasForeignKey<XivInstallationState>(state => state.RepositoryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<XivInstallationState>()
+            .HasOne(state => state.LastAppliedPatch)
+            .WithMany()
+            .HasForeignKey(state => state.LastAppliedPatchId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.Entity<XivInstallationState>()
+            .Property(state => state.Status)
+            .HasConversion<string>();
         
         //
         // ExpansionRepositoryMapping

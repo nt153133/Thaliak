@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using Downloader;
 using Serilog;
+using Thaliak.Service.Poller.Installation;
 
 namespace Thaliak.Service.Poller.Download;
 
@@ -11,10 +12,15 @@ public class DownloaderService : BackgroundService
     private static readonly Channel<DownloadJob> PendingJobs = Channel.CreateUnbounded<DownloadJob>();
     private readonly DownloadService _downloadService;
     private readonly string _downloadPath;
+    private readonly InstallationSignal _installationSignal;
 
-    public DownloaderService(DownloadService downloadService, IConfiguration config)
+    public DownloaderService(
+        DownloadService downloadService,
+        IConfiguration config,
+        InstallationSignal installationSignal)
     {
         _downloadService = downloadService;
+        _installationSignal = installationSignal;
         _downloadPath = Path.GetFullPath(config.GetValue<string>("Directories:Patches"));
         Directory.CreateDirectory(_downloadPath);
 
@@ -57,6 +63,7 @@ public class DownloaderService : BackgroundService
             if (File.Exists(dest))
             {
                 Log.Information("Skipping download of {0} as it already exists locally at {1}", job.Url, dest);
+                _installationSignal.Notify();
                 continue;
             }
 
@@ -68,6 +75,10 @@ public class DownloaderService : BackgroundService
 
             Log.Information("Starting download of URL {0} to {1}", job.Url, dest);
             await _downloadService.DownloadFileTaskAsync(job.Url, dest);
+            if (File.Exists(dest))
+            {
+                _installationSignal.Notify();
+            }
         }
     }
 }

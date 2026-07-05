@@ -23,6 +23,7 @@ public sealed class SqliteDatabaseTests
             r.Name == "traditional_chinese/win32/release/ex5" && r.ServiceId == 4));
         Assert.True(await db.ExpansionRepositoryMappings.AnyAsync(m =>
             m.GameRepositoryId == 20 && m.ExpansionId == 5 && m.ExpansionRepositoryId == 25));
+        Assert.Empty(await db.InstallationStates.ToListAsync());
     }
 
     [Fact]
@@ -50,6 +51,12 @@ public sealed class SqliteDatabaseTests
         Assert.Single(upgradePaths.Where(p => p.PreviousRepoVersionId is null));
         Assert.Single(upgradePaths.Where(p => p.PreviousRepoVersionId is not null));
         Assert.All(upgradePaths, p => Assert.True(p.IsActive));
+
+        var chain = await new PatchChainResolver(db).ResolveAsync(20);
+        Assert.NotNull(chain);
+        Assert.Equal(
+            ["2026.05.15.0000.0000", "2026.05.16.0000.0000"],
+            chain.Select(patch => patch.RepoVersion.VersionString));
     }
 
     private static ThaliakContext CreateContext()

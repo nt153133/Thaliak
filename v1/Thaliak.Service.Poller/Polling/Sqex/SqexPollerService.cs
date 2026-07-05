@@ -18,6 +18,7 @@ public class SqexPollerService : IPoller
     private readonly ThaliakContext _db;
     private readonly HttpClient _client;
     private readonly PatchReconciliationService _reconciliationService;
+    private readonly IPatchApplicationService _patchApplicationService;
     private readonly string _patchDownloadPath;
 
     public const int BootRepoId = 1;
@@ -31,11 +32,17 @@ public class SqexPollerService : IPoller
     private const string USER_AGENT_TEMPLATE = "SQEXAuthor/2.0.0(Windows 6.2; ja-jp; {0})";
     private readonly string _userAgent = GenerateUserAgent();
     
-    public SqexPollerService(ThaliakContext db, HttpClient client, PatchReconciliationService reconciliationService, IConfiguration config)
+    public SqexPollerService(
+        ThaliakContext db,
+        HttpClient client,
+        PatchReconciliationService reconciliationService,
+        IPatchApplicationService patchApplicationService,
+        IConfiguration config)
     {
         _db = db;
         _client = client;
         _reconciliationService = reconciliationService;
+        _patchApplicationService = patchApplicationService;
         _patchDownloadPath = Path.GetFullPath(config.GetValue<string>("Directories:Patches"));
 
         var bootDirName = config.GetValue<string>("Directories:Boot");
@@ -145,7 +152,7 @@ public class SqexPollerService : IPoller
         await WaitForPatchDownloadsAsync(patches);
 
         // Install patches sequentially
-        var installer = new PatchInstaller(gameDir);
+        var installer = new PatchInstaller(gameDir, _patchApplicationService);
         foreach (var patch in patches)
         {
             var patchFile = GetPatchFileInfo(patch);

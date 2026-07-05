@@ -1,7 +1,5 @@
 using System.Collections.Concurrent;
 using Serilog;
-using ZiPatchLib;
-using ZiPatchLib.Util;
 
 namespace Thaliak.Service.Poller.Patch;
 
@@ -9,10 +7,12 @@ public class PatchInstaller
 {
     private readonly ConcurrentQueue<PatchInstallData> queuedInstalls = new();
     private readonly DirectoryInfo gameDirectory;
+    private readonly IPatchApplicationService patchApplicationService;
 
-    public PatchInstaller(DirectoryInfo gameDirectory)
+    public PatchInstaller(DirectoryInfo gameDirectory, IPatchApplicationService patchApplicationService)
     {
         this.gameDirectory = gameDirectory;
+        this.patchApplicationService = patchApplicationService;
     }
 
     public void QueueInstall(PatchInstallData installData)
@@ -50,13 +50,12 @@ public class PatchInstaller
         gameDirectory.CreateSubdirectory("game");
         gameDirectory.CreateSubdirectory("boot");
 
-        // Run the synchronous patch installation on a background thread to avoid blocking
-        await Task.Run(() =>
-        {
-            InstallPatch(installData.PatchFile.FullName,
-                Path.Combine(gameDirectory.FullName,
-                    installData.Repo == Repository.Boot ? "boot" : "game"));
-        }, cancellationToken);
+        await patchApplicationService.ApplyAsync(
+            installData.PatchFile,
+            new DirectoryInfo(Path.Combine(
+                gameDirectory.FullName,
+                installData.Repo == Repository.Boot ? "boot" : "game")),
+            cancellationToken);
 
         try
         {
@@ -69,20 +68,4 @@ public class PatchInstaller
         }
     }
 
-    private static void InstallPatch(string patchPath, string gamePath)
-    {
-        Log.Information("[PATCHER] Installing {0} to {1}", patchPath, gamePath);
-
-        using var patchFile = ZiPatchFile.FromFileName(patchPath);
-
-        using (var store = new SqexFileStreamStore())
-        {
-            var config = new ZiPatchConfig(gamePath) { Store = store };
-
-            foreach (var chunk in patchFile.GetChunks())
-                chunk.ApplyChunk(config);
-        }
-
-        Log.Information("[PATCHER] Patch {0} installed", patchPath);
-    }
 }

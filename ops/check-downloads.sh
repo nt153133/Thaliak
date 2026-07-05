@@ -12,6 +12,6 @@ echo "--- status ---"
 systemctl show thaliak -p ActiveState -p SubState -p MainPID -p MemoryCurrent -p MemoryPeak
 echo "--- disk ---"
 df -h /srv/thaliak
-du -sh /srv/thaliak/patches /srv/thaliak/boot 2>/dev/null || true
+du -sh /srv/thaliak/patches /srv/thaliak/installs 2>/dev/null || true
 echo "--- recent patch files ---"
 find /srv/thaliak/patches -type f -printf "%T@ %s %p\n" | sort -nr | head -n 20

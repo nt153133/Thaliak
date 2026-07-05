@@ -10,6 +10,16 @@ fi
 release="$(date -u +%Y%m%d%H%M%S)"
 release_dir="/opt/thaliak/releases/$release"
 
+install -d -m 750 -o thaliak -g thaliak /srv/thaliak/installs
+if [[ -d /srv/thaliak/boot && ! -e /srv/thaliak/installs/global ]]; then
+    mv /srv/thaliak/boot /srv/thaliak/installs/global
+fi
+install -d -m 750 -o thaliak -g thaliak \
+    /srv/thaliak/installs/global \
+    /srv/thaliak/installs/china \
+    /srv/thaliak/installs/tc
+chown -R thaliak:thaliak /srv/thaliak/installs
+
 mkdir -p "$release_dir"
 tar -xzf "$archive" -C "$release_dir"
 rm -f "$archive"
@@ -25,8 +35,13 @@ install -d -m 750 -o root -g thaliak /etc/thaliak
 cat >/etc/thaliak/thaliak.env <<'EOF'
 DOTNET_ENVIRONMENT=Production
 ConnectionStrings__sqlite=Data Source=/srv/thaliak/db/thaliak.db
-Directories__Boot=/srv/thaliak/boot
+Directories__Boot=/srv/thaliak/installs/global
 Directories__Patches=/srv/thaliak/patches
+Installations__Enabled=false
+Installations__Root=/srv/thaliak/installs
+Installations__Regions__0=Global
+Installations__Regions__1=China
+Installations__Regions__2=TC
 Polling__DisableKoreaChecks=true
 Polling__DailyCheckTimePacific=09:00
 Polling__MaintenanceActivePollMinutes=2

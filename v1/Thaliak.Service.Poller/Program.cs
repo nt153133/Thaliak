@@ -6,7 +6,9 @@ using Serilog;
 using Serilog.Events;
 using Thaliak.Common.Database;
 using Thaliak.Service.Poller.Download;
+using Thaliak.Service.Poller.Installation;
 using Thaliak.Service.Poller.Notifications;
+using Thaliak.Service.Poller.Patch;
 using Thaliak.Service.Poller.Polling;
 using Thaliak.Service.Poller.Polling.Actoz;
 using Thaliak.Service.Poller.Polling.Shanda;
@@ -44,6 +46,12 @@ var host = Host.CreateDefaultBuilder(args)
         }));
         services.AddHostedService<DownloaderService>();
         services.AddHostedService<PatchAlertDispatcherHostedService>();
+        services.Configure<InstallationOptions>(
+            ctx.Configuration.GetSection(InstallationOptions.SectionName));
+        services.AddSingleton<InstallationSignal>();
+        services.AddSingleton<IPatchApplicationService, PatchApplicationService>();
+        services.AddScoped<RegionalInstallationService>();
+        services.AddHostedService<RegionalInstallationCoordinator>();
 
         services.AddScoped<LodestoneMaintenanceService>();
         services.AddScoped<TraditionalChineseMaintenanceService>();

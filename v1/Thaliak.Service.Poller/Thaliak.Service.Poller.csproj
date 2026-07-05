@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
@@ -20,17 +20,17 @@
     <ItemGroup>
         <PackageReference Include="AngleSharp" Version="1.1.2" />
         <PackageReference Include="Downloader" Version="2.3.5" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.6">
+        <PackageReference Include="FFXIVDownloader" Version="1.0.8" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
         <PackageReference Include="Discord.Net.Webhook" Version="3.12.0" />
         <PackageReference Include="Quartz.Extensions.Hosting" Version="3.7.0" />
         <PackageReference Include="Serilog" Version="3.1.1" />
         <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
         <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
-        <PackageReference Include="ZiPatchLib" Version="3.0.0" />
     </ItemGroup>
 
     

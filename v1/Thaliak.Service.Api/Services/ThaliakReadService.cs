@@ -7,6 +7,8 @@ namespace Thaliak.Service.Api.Services;
 
 public sealed class ThaliakReadService(ThaliakContext db)
 {
+    private readonly PatchChainResolver _patchChainResolver = new(db);
+
     public async Task<RepositoriesResponseDto> GetRepositoriesAsync(CancellationToken cancellationToken)
     {
         var repositories = await db.Repositories
@@ -199,76 +201,15 @@ public sealed class ThaliakReadService(ThaliakContext db)
         string? toVersion,
         CancellationToken cancellationToken)
     {
-        var versions = await db.RepoVersions
-            .AsNoTracking()
-            .Include(version => version.Patches)
-            .Where(version => version.RepositoryId == repository.Id)
-            .ToListAsync(cancellationToken);
+        var patches = await _patchChainResolver.ResolveAsync(
+            repository.Id,
+            fromVersion,
+            toVersion,
+            cancellationToken);
 
-        var versionsById = versions.ToDictionary(version => version.Id);
-        var versionsByString = versions.ToDictionary(version => version.VersionString, StringComparer.Ordinal);
-
-        var targetVersion = toVersion is null
-            ? versions
-                .SelectMany(version => version.Patches, (version, patch) => new { Version = version, Patch = patch })
-                .Where(item => item.Patch.IsActive)
-                .OrderByDescending(item => VersionSortKey(item.Version.VersionString), StringComparer.Ordinal)
-                .ThenByDescending(item => item.Patch.Id)
-                .Select(item => item.Version)
-                .FirstOrDefault()
-            : versionsByString.GetValueOrDefault(toVersion);
-
-        if (targetVersion is null) {
-            return toVersion is null ? [] : null;
-        }
-
-        var upgradePaths = await db.UpgradePaths
-            .AsNoTracking()
-            .Where(upgradePath => upgradePath.RepositoryId == repository.Id)
-            .OrderByDescending(upgradePath => upgradePath.LastOffered)
-            .ThenByDescending(upgradePath => upgradePath.Id)
-            .ToListAsync(cancellationToken);
-
-        var previousByVersion = upgradePaths
-            .GroupBy(upgradePath => upgradePath.RepoVersionId)
-            .ToDictionary(group => group.Key, group => group.First());
-
-        var chain = new List<XivRepoVersion>();
-        var currentVersion = targetVersion;
-        var visitedVersionIds = new HashSet<int>();
-
-        while (visitedVersionIds.Add(currentVersion.Id)) {
-            chain.Add(currentVersion);
-
-            if (string.Equals(currentVersion.VersionString, fromVersion, StringComparison.Ordinal)) {
-                break;
-            }
-
-            if (!previousByVersion.TryGetValue(currentVersion.Id, out var upgradePath)
-                || upgradePath.PreviousRepoVersionId is null) {
-                if (fromVersion is not null) {
-                    return null;
-                }
-
-                break;
-            }
-
-            if (!versionsById.TryGetValue(upgradePath.PreviousRepoVersionId.Value, out currentVersion!)) {
-                return fromVersion is null ? chain.SelectMany(ToPatchDtos).Reverse().ToArray() : null;
-            }
-        }
-
-        if (fromVersion is not null && chain.All(version => version.VersionString != fromVersion)) {
-            return null;
-        }
-
-        chain.Reverse();
-        return chain.SelectMany(ToPatchDtos).ToArray();
-
-        IEnumerable<PatchDto> ToPatchDtos(XivRepoVersion version) =>
-            version.Patches
-                .OrderBy(patch => patch.Id)
-                .Select(patch => ToPatchDto(repository.Slug, patch));
+        return patches?
+            .Select(patch => ToPatchDto(repository.Slug, patch))
+            .ToArray();
     }
 
     private IQueryable<XivPatch> PatchQuery(int repositoryId) =>

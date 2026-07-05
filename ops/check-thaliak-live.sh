@@ -14,7 +14,7 @@ echo "--- error-scan ---"
 journalctl -u thaliak --since="@$since_epoch" --no-pager |
     grep -E "ERR|Exception|fail|failed|SSL|UNIQUE|NoValidAccount" || true
 echo "--- files ---"
-find /srv/thaliak/boot -maxdepth 4 -type f -printf "%p %s bytes\n" | head -n 20
+find /srv/thaliak/installs -maxdepth 5 -type f -printf "%p %s bytes\n" | head -n 20
 find /srv/thaliak/patches -maxdepth 4 -type f -printf "%p %s bytes\n" | head -n 20
 echo "--- memory ---"
 systemctl show thaliak -p ActiveState -p SubState -p MemoryCurrent -p MemoryPeak
