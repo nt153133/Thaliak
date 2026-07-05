@@ -76,9 +76,12 @@ else
     set_env_value Directories__Boot /srv/thaliak/installs/global
     set_env_default Installations__Enabled false
     set_env_default Installations__Root /srv/thaliak/installs
-    set_env_default Installations__Regions__0 Global
-    set_env_default Installations__Regions__1 China
-    set_env_default Installations__Regions__2 TC
+    if ! grep -q "^Installations__Regions__[0-9][0-9]*=" "$env_file"; then
+        printf '%s\n' \
+            "Installations__Regions__0=Global" \
+            "Installations__Regions__1=China" \
+            "Installations__Regions__2=TC" >>"$env_file"
+    fi
 fi
 chown root:thaliak "$env_file"
 chmod 640 "$env_file"
