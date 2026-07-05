@@ -32,7 +32,9 @@ rm -rf /opt/thaliak/current
 ln -s "$release_dir" /opt/thaliak/current
 
 install -d -m 750 -o root -g thaliak /etc/thaliak
-cat >/etc/thaliak/thaliak.env <<'EOF'
+env_file=/etc/thaliak/thaliak.env
+if [[ ! -f "$env_file" ]]; then
+cat >"$env_file" <<'EOF'
 DOTNET_ENVIRONMENT=Production
 ConnectionStrings__sqlite=Data Source=/srv/thaliak/db/thaliak.db
 Directories__Boot=/srv/thaliak/installs/global
@@ -52,8 +54,34 @@ Notifications__SuppressBootPatchAlerts=true
 ENABLE_DOWNLOADS=true
 TMPDIR=/srv/thaliak/tmp
 EOF
-chown root:thaliak /etc/thaliak/thaliak.env
-chmod 640 /etc/thaliak/thaliak.env
+else
+    set_env_value() {
+        local key="$1"
+        local value="$2"
+        if grep -q "^${key}=" "$env_file"; then
+            sed -i "s#^${key}=.*#${key}=${value}#" "$env_file"
+        else
+            printf '%s=%s\n' "$key" "$value" >>"$env_file"
+        fi
+    }
+
+    set_env_default() {
+        local key="$1"
+        local value="$2"
+        if ! grep -q "^${key}=" "$env_file"; then
+            printf '%s=%s\n' "$key" "$value" >>"$env_file"
+        fi
+    }
+
+    set_env_value Directories__Boot /srv/thaliak/installs/global
+    set_env_default Installations__Enabled false
+    set_env_default Installations__Root /srv/thaliak/installs
+    set_env_default Installations__Regions__0 Global
+    set_env_default Installations__Regions__1 China
+    set_env_default Installations__Regions__2 TC
+fi
+chown root:thaliak "$env_file"
+chmod 640 "$env_file"
 
 cat >/etc/systemd/system/thaliak.service <<'EOF'
 [Unit]
