@@ -14,8 +14,8 @@ echo "--- error-scan ---"
 journalctl -u thaliak --since="@$since_epoch" --no-pager |
     grep -E "ERR|Exception|fail|failed|SSL|UNIQUE|NoValidAccount" || true
 echo "--- files ---"
-find /srv/thaliak/installs -maxdepth 5 -type f -printf "%p %s bytes\n" | head -n 20
-find /srv/thaliak/patches -maxdepth 4 -type f -printf "%p %s bytes\n" | head -n 20
+find /srv/thaliak/installs -maxdepth 5 -type f -printf "%p %s bytes\n" | head -n 20 || true
+find /srv/thaliak/patches -maxdepth 4 -type f -printf "%p %s bytes\n" | head -n 20 || true
 echo "--- memory ---"
 systemctl show thaliak -p ActiveState -p SubState -p MemoryCurrent -p MemoryPeak
 echo "--- installation io ---"
@@ -36,4 +36,4 @@ echo "--- queue-ish logs ---"
 journalctl -u thaliak --since="@$since_epoch" --no-pager |
     grep -Ei "download|waiting|boot needs|patch process|complete|error|exception|queue|queued|Downloader" || true
 echo "--- all files ---"
-find /srv/thaliak -type f -printf "%p %s bytes\n" | sort | head -n 80
+find /srv/thaliak -type f -printf "%p %s bytes\n" | sort | head -n 80 || true
