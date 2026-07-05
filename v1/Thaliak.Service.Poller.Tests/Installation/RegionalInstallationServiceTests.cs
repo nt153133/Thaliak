@@ -12,6 +12,12 @@ namespace Thaliak.Service.Poller.Tests.Installation;
 public sealed class RegionalInstallationServiceTests
 {
     [Fact]
+    public void InstallationOptions_DoNotPrepopulateRegions()
+    {
+        Assert.Empty(new InstallationOptions().Regions);
+    }
+
+    [Fact]
     public async Task ReconcileAsync_WithCompleteTcChains_InstallsAndResumesAllRepositories()
     {
         using var paths = new TestPaths();

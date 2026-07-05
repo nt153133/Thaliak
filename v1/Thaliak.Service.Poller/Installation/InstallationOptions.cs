@@ -8,5 +8,5 @@ public sealed class InstallationOptions
 
     public string Root { get; set; } = "./data/installations";
 
-    public string[] Regions { get; set; } = ["Global", "China", "TC"];
+    public string[] Regions { get; set; } = [];
 }
