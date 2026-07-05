@@ -20,7 +20,7 @@
     <ItemGroup>
         <PackageReference Include="AngleSharp" Version="1.1.2" />
         <PackageReference Include="Downloader" Version="2.3.5" />
-        <PackageReference Include="FFXIVDownloader" Version="1.0.8" />
+        <PackageReference Include="FFXIVDownloader" Version="1.1.0" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
