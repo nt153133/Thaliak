@@ -82,7 +82,7 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
     {
         Log.Information("Logging upgrade path data for repo {repoId}", effectiveRepoId);
 
-        remotePatches = remotePatches.OrderBy(p => p.VersionId);
+        remotePatches = remotePatches.DistinctBy(patch => patch.VersionId, StringComparer.Ordinal);
         var recordedPaths = new HashSet<(int RepoVersionId, int? PreviousRepoVersionId)>();
 
         PatchListEntry? previousPatch = null;

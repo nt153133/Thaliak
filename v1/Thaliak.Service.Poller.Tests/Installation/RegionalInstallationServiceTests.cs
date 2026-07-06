@@ -147,7 +147,7 @@ public sealed class RegionalInstallationServiceTests
                 RepoVersion = version,
                 RemoteOriginPath =
                     $"https://mydownloadakamai.ffxiv.com.tw/ffxiv/260101/ex{expansionId}/{versionString}.patch",
-                Size = 4,
+                Size = 16,
                 IsActive = true,
                 FirstOffered = DateTime.UtcNow,
                 LastOffered = DateTime.UtcNow
@@ -168,7 +168,9 @@ public sealed class RegionalInstallationServiceTests
             {
                 var patchPath = Path.Combine(patchRoot, patch.LocalStoragePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(patchPath)!);
-                await File.WriteAllBytesAsync(patchPath, [1, 2, 3, 4]);
+                await File.WriteAllBytesAsync(
+                    patchPath,
+                    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
             }
         }
     }

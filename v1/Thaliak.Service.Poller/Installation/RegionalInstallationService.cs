@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -49,6 +50,7 @@ public sealed class RegionalInstallationService(
         DirectoryInfo installationRoot,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
         var regionRoot = new DirectoryInfo(Path.Combine(installationRoot.FullName, region.DirectoryName));
         regionRoot.Create();
 
@@ -59,38 +61,50 @@ public sealed class RegionalInstallationService(
             .ToListAsync(cancellationToken);
 
         var isComplete = true;
+        var appliedPatchCount = 0;
+        long appliedPatchBytes = 0;
         foreach (var mapping in mappings)
         {
             var repository = mapping.ExpansionId == 0
                 ? Repository.Ffxiv
                 : (Repository)((int)Repository.Ex1 + mapping.ExpansionId - 1);
 
-            var repositoryComplete = await ReconcileRepositoryAsync(
+            var result = await ReconcileRepositoryAsync(
                 region,
                 regionRoot,
                 mapping.ExpansionRepositoryId,
                 repository,
                 cancellationToken);
 
-            if (!repositoryComplete)
+            appliedPatchCount += result.AppliedPatchCount;
+            appliedPatchBytes += result.AppliedPatchBytes;
+            if (!result.IsComplete)
             {
                 isComplete = false;
             }
         }
 
+        stopwatch.Stop();
         Log.Information(
-            "Regional installation {Region} reconciliation complete with status {Status}",
+            "[INSTALL-TIMING] Region {Region} completed with status {Status} in {Elapsed}; " +
+            "applied {PatchCount} patches ({PatchBytes} bytes)",
             region.Name,
-            isComplete ? "Current" : "Incomplete");
+            isComplete ? "Current" : "Incomplete",
+            stopwatch.Elapsed,
+            appliedPatchCount,
+            appliedPatchBytes);
     }
 
-    private async Task<bool> ReconcileRepositoryAsync(
+    private async Task<RepositoryReconciliationResult> ReconcileRepositoryAsync(
         RegionDefinition region,
         DirectoryInfo regionRoot,
         int repositoryId,
         Repository repository,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var appliedPatchCount = 0;
+        long appliedPatchBytes = 0;
         var state = await db.InstallationStates
             .SingleOrDefaultAsync(item => item.RepositoryId == repositoryId, cancellationToken);
         if (state is null)
@@ -106,8 +120,24 @@ public sealed class RegionalInstallationService(
             await db.SaveChangesAsync(cancellationToken);
             Log.Warning("Region {Region} repository {RepositoryId} has no installable patch chain",
                 region.Name, repositoryId);
-            return false;
+            return FinishRepository(
+                region.Name,
+                repositoryId,
+                isComplete: false,
+                appliedPatchCount,
+                appliedPatchBytes,
+                stopwatch);
         }
+
+        Log.Information(
+            "Region {Region} repository {RepositoryId} planned {PatchCount} patches " +
+            "from {FirstVersion} through {LastVersion} ({PatchBytes} bytes)",
+            region.Name,
+            repositoryId,
+            chain.Count,
+            chain[0].RepoVersion.VersionString,
+            chain[^1].RepoVersion.VersionString,
+            chain.Sum(patch => patch.Size));
 
         BootstrapFromVersionFile(state, chain, repository, regionRoot);
 
@@ -122,10 +152,39 @@ public sealed class RegionalInstallationService(
                     InstallationStatus.NeedsRebuild,
                     $"Applied patch {state.LastAppliedPatchId} is not present in the active chain.");
                 await db.SaveChangesAsync(cancellationToken);
-                return false;
+                return FinishRepository(
+                    region.Name,
+                    repositoryId,
+                    isComplete: false,
+                    appliedPatchCount,
+                    appliedPatchBytes,
+                    stopwatch);
             }
 
             startIndex = installedIndex + 1;
+        }
+
+        var unavailablePatch = chain
+            .Skip(startIndex)
+            .Select(patch => (Patch: patch, File: GetPatchFile(patch)))
+            .FirstOrDefault(item =>
+                !item.File.Exists || (item.Patch.Size > 0 && item.File.Length != item.Patch.Size));
+        if (unavailablePatch.Patch is not null)
+        {
+            var actualSize = unavailablePatch.File.Exists ? unavailablePatch.File.Length : 0;
+            SetStatus(
+                state,
+                InstallationStatus.Pending,
+                $"Patch file is unavailable or incomplete: {unavailablePatch.File.FullName} " +
+                $"({actualSize}/{unavailablePatch.Patch.Size} bytes).");
+            await db.SaveChangesAsync(cancellationToken);
+            return FinishRepository(
+                region.Name,
+                repositoryId,
+                isComplete: false,
+                appliedPatchCount,
+                appliedPatchBytes,
+                stopwatch);
         }
 
         for (var index = startIndex; index < chain.Count; index++)
@@ -133,18 +192,6 @@ public sealed class RegionalInstallationService(
             cancellationToken.ThrowIfCancellationRequested();
             var patch = chain[index];
             var patchFile = GetPatchFile(patch);
-
-            if (!patchFile.Exists || (patch.Size > 0 && patchFile.Length != patch.Size))
-            {
-                var actualSize = patchFile.Exists ? patchFile.Length : 0;
-                SetStatus(
-                    state,
-                    InstallationStatus.Pending,
-                    $"Patch file is unavailable or incomplete: {patchFile.FullName} ({actualSize}/{patch.Size} bytes).");
-                await db.SaveChangesAsync(cancellationToken);
-                return false;
-            }
-
             state.Status = InstallationStatus.Installing;
             state.LastAttemptedAtUtc = DateTime.UtcNow;
             state.LastError = null;
@@ -152,10 +199,22 @@ public sealed class RegionalInstallationService(
 
             try
             {
+                var patchStopwatch = Stopwatch.StartNew();
                 await patchApplicationService.ApplyAsync(
                     patchFile,
                     new DirectoryInfo(Path.Combine(regionRoot.FullName, "game")),
                     cancellationToken);
+                patchStopwatch.Stop();
+                appliedPatchCount++;
+                appliedPatchBytes += patch.Size;
+                Log.Information(
+                    "[INSTALL-TIMING] Region {Region} repository {RepositoryId} patch {PatchId} " +
+                    "({PatchBytes} bytes) applied in {Elapsed}",
+                    region.Name,
+                    repositoryId,
+                    patch.Id,
+                    patch.Size,
+                    patchStopwatch.Elapsed);
 
                 repository.SetVer(regionRoot, patch.RepoVersion.VersionString);
                 state.LastAppliedPatchId = patch.Id;
@@ -173,7 +232,13 @@ public sealed class RegionalInstallationService(
                 SetStatus(state, InstallationStatus.Failed, LimitError(ex.ToString()));
                 await db.SaveChangesAsync(cancellationToken);
                 Log.Error(ex, "Failed installing patch {PatchId} for region {Region}", patch.Id, region.Name);
-                return false;
+                return FinishRepository(
+                    region.Name,
+                    repositoryId,
+                    isComplete: false,
+                    appliedPatchCount,
+                    appliedPatchBytes,
+                    stopwatch);
             }
         }
 
@@ -181,7 +246,13 @@ public sealed class RegionalInstallationService(
         state.LastCompletedAtUtc = DateTime.UtcNow;
         state.LastError = null;
         await db.SaveChangesAsync(cancellationToken);
-        return true;
+        return FinishRepository(
+            region.Name,
+            repositoryId,
+            isComplete: true,
+            appliedPatchCount,
+            appliedPatchBytes,
+            stopwatch);
     }
 
     private FileInfo GetPatchFile(XivPatch patch) =>
@@ -240,5 +311,31 @@ public sealed class RegionalInstallationService(
     private static string LimitError(string error) =>
         error.Length <= 2000 ? error : error[..2000];
 
+    private static RepositoryReconciliationResult FinishRepository(
+        string region,
+        int repositoryId,
+        bool isComplete,
+        int appliedPatchCount,
+        long appliedPatchBytes,
+        Stopwatch stopwatch)
+    {
+        stopwatch.Stop();
+        Log.Information(
+            "[INSTALL-TIMING] Region {Region} repository {RepositoryId} completed with status {Status} " +
+            "in {Elapsed}; applied {PatchCount} patches ({PatchBytes} bytes)",
+            region,
+            repositoryId,
+            isComplete ? "Current" : "Incomplete",
+            stopwatch.Elapsed,
+            appliedPatchCount,
+            appliedPatchBytes);
+        return new(isComplete, appliedPatchCount, appliedPatchBytes);
+    }
+
     private sealed record RegionDefinition(string Name, int GameRepositoryId, string DirectoryName);
+
+    private sealed record RepositoryReconciliationResult(
+        bool IsComplete,
+        int AppliedPatchCount,
+        long AppliedPatchBytes);
 }

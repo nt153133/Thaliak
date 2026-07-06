@@ -49,6 +49,6 @@ public class TraditionalChinesePollerService(ThaliakContext db, HttpClient clien
 
         Log.Verbose("TC game patching is needed... List:\n{PatchList}", text);
 
-        return TCPatchListParser.Parse(text).OrderBy(p => p.VersionId).ToArray();
+        return TCPatchListParser.Parse(text);
     }
 }

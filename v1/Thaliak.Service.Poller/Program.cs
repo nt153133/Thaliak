@@ -91,30 +91,37 @@ var host = Host.CreateDefaultBuilder(args)
             o.LogTo(Log.Verbose);
         });
 
-        services.AddQuartz(q =>
+        if (PollingConfiguration.ShouldRegisterPolling(ctx.Configuration))
         {
-            q.UseMicrosoftDependencyInjectionJobFactory();
+            services.AddQuartz(q =>
+            {
+                q.UseMicrosoftDependencyInjectionJobFactory();
 
-            q.AddPollJob<LodestoneMaintenancePollJob, LodestoneMaintenanceService>();
-            q.AddPollJob<TraditionalChineseMaintenancePollJob, TraditionalChineseMaintenanceService>();
+                q.AddPollJob<LodestoneMaintenancePollJob, LodestoneMaintenanceService>();
+                q.AddPollJob<TraditionalChineseMaintenancePollJob, TraditionalChineseMaintenanceService>();
 
-            // start patch pollers at a slight delay to allow maintenance pollers to work first
-            var delayedPatchStart = DateTime.UtcNow.AddSeconds(30);
-            q.AddPollJob<SqexLoginPollJob, SqexPollerService>(delayedPatchStart);
-            q.AddPollJob<SqexFutureScrapeJob, SqexFutureScraperService>(delayedPatchStart);
+                // start patch pollers at a slight delay to allow maintenance pollers to work first
+                var delayedPatchStart = DateTime.UtcNow.AddSeconds(30);
+                q.AddPollJob<SqexLoginPollJob, SqexPollerService>(delayedPatchStart);
+                q.AddPollJob<SqexFutureScrapeJob, SqexFutureScraperService>(delayedPatchStart);
 
-            // KR/CN/TC can start instantly
-            if (PollingConfiguration.ShouldRegisterKoreaChecks(ctx.Configuration)) {
-                q.AddPollJob<ActozPatchListPollJob, ActozPollerService>(delayedPatchStart);
-            } else {
-                Log.Information("Korean patch checks disabled by {ConfigKey}", PollingConfiguration.DisableKoreaChecksKey);
-            }
+                // KR/CN/TC can start instantly
+                if (PollingConfiguration.ShouldRegisterKoreaChecks(ctx.Configuration)) {
+                    q.AddPollJob<ActozPatchListPollJob, ActozPollerService>(delayedPatchStart);
+                } else {
+                    Log.Information("Korean patch checks disabled by {ConfigKey}", PollingConfiguration.DisableKoreaChecksKey);
+                }
 
-            q.AddPollJob<ShandaPatchListPollJob, ShandaPollerService>(delayedPatchStart);
-            q.AddPollJob<TraditionalChinesePatchListPollJob, TraditionalChinesePollerService>(delayedPatchStart);
-        });
+                q.AddPollJob<ShandaPatchListPollJob, ShandaPollerService>(delayedPatchStart);
+                q.AddPollJob<TraditionalChinesePatchListPollJob, TraditionalChinesePollerService>(delayedPatchStart);
+            });
 
-        services.AddQuartzHostedService(o => { o.WaitForJobsToComplete = true; });
+            services.AddQuartzHostedService(o => { o.WaitForJobsToComplete = true; });
+        }
+        else
+        {
+            Log.Information("Polling disabled by {ConfigKey}", PollingConfiguration.EnabledKey);
+        }
     })
     .UseSerilog()
     .Build();

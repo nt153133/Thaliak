@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -25,9 +26,14 @@ public sealed class RegionalInstallationCoordinator(
 
             try
             {
+                var stopwatch = Stopwatch.StartNew();
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var installer = scope.ServiceProvider.GetRequiredService<RegionalInstallationService>();
                 await installer.ReconcileAsync(stoppingToken);
+                stopwatch.Stop();
+                Log.Information(
+                    "[INSTALL-TIMING] End-to-end installation reconciliation completed in {Elapsed}",
+                    stopwatch.Elapsed);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
