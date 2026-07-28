@@ -11,7 +11,7 @@ namespace Thaliak.Service.Poller.Polling;
 
 public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueService alertQueueService)
 {
-    public async Task ReconcileAsync(XivRepository repo, PatchListEntry[] remotePatches,
+    public async Task<PatchReconciliationResult> ReconcileAsync(XivRepository repo, PatchListEntry[] remotePatches,
         PatchDiscoveryType discoveryType = PatchDiscoveryType.Offered, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
@@ -65,7 +65,7 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
         }
 
         if (newPatchList.Count < 1) {
-            return;
+            return PatchReconciliationResult.Empty;
         }
 
         var newPatchIds = newPatchList.Select(p => p.Id).ToArray();
@@ -76,6 +76,9 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
             .ToList();
 
         await alertQueueService.QueueEligiblePatchesAsync(alertPatches, discoveryType, now, cancellationToken);
+        return discoveryType == PatchDiscoveryType.Offered
+            ? new PatchReconciliationResult(alertPatches)
+            : PatchReconciliationResult.Empty;
     }
 
     private void RecordUpgradePathData(DateTime now, int effectiveRepoId, IEnumerable<PatchListEntry> remotePatches)

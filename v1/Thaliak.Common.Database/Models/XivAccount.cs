@@ -11,6 +11,8 @@ public class XivAccount
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public int Id { get; set; }
 
+    public XivAccountPurpose Purpose { get; set; } = XivAccountPurpose.Routine;
+
     /// <summary>
     /// The account username.
     /// </summary>

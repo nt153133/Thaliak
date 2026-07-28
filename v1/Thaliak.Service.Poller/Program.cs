@@ -61,9 +61,17 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<PatchAlertDispatchService>();
         services.AddScoped<PatchAlertNotificationService>();
         services.AddScoped<IPatchDiscordAlertSender, DiscordWebhookPatchAlertSender>();
+        services.AddScoped<IExpansionSweepFailureNotifier, DiscordExpansionSweepFailureNotifier>();
 
         services.AddScoped<SqexFutureScraperService>();
 
+        services.Configure<GlobalExpansionSweepOptions>(
+            ctx.Configuration.GetSection(GlobalExpansionSweepOptions.SectionName));
+        services.AddSingleton(TimeProvider.System);
+        services.AddScoped<ISqexLauncherClient, SqexLauncherClient>();
+        services.AddScoped<SqexAccountProvider>();
+        services.AddScoped<ExpansionSweepManualArmStore>();
+        services.AddScoped<GlobalExpansionSweepCoordinator>();
         services.AddScoped<SqexPollerService>();
         services.AddScoped<ActozPollerService>();
         services.AddScoped<ShandaPollerService>();

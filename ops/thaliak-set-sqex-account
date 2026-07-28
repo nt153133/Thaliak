@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import os
+import sqlite3
+import sys
+
+DEFAULT_DB_PATH = "/srv/thaliak/db/thaliak.db"
+PURPOSES = {
+    "routine": "Routine",
+    "expansion": "Expansion",
+}
+
+
+def fail(message):
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def connect(db_path):
+    if not os.path.exists(db_path):
+        fail(f"Database not found: {db_path}")
+
+    connection = sqlite3.connect(db_path)
+    columns = {
+        row[1]
+        for row in connection.execute("pragma table_info(accounts)")
+    }
+    if "purpose" not in columns:
+        connection.close()
+        fail("The account-purpose migration has not been applied. Start the updated poller once, then retry.")
+
+    return connection
+
+
+def upsert_account(connection, purpose, username, password):
+    existing = connection.execute(
+        "select id from accounts where purpose = ?",
+        (purpose,),
+    ).fetchone()
+    if existing:
+        account_id = existing[0]
+        connection.execute(
+            "update accounts set username = ?, password = ? where id = ?",
+            (username, password, account_id),
+        )
+        return "updated", account_id
+
+    cursor = connection.execute(
+        "insert into accounts (purpose, username, password) values (?, ?, ?)",
+        (purpose, username, password),
+    )
+    return "inserted", cursor.lastrowid
+
+
+def remove_account(connection, purpose):
+    cursor = connection.execute(
+        "delete from accounts where purpose = ?",
+        (purpose,),
+    )
+    return cursor.rowcount
+
+
+def preserve_database_permissions(db_path, original_stat):
+    for path in (db_path, f"{db_path}-wal", f"{db_path}-shm"):
+        if not os.path.exists(path):
+            continue
+        os.chown(path, original_stat.st_uid, original_stat.st_gid)
+        os.chmod(path, original_stat.st_mode & 0o777)
+
+
+def read_credentials():
+    username = input("SQEX username: ").strip()
+    if not username:
+        fail("Username cannot be empty.")
+
+    password = getpass.getpass("SQEX password: ")
+    confirmation = getpass.getpass("Confirm SQEX password: ")
+    if password != confirmation:
+        fail("Passwords did not match.")
+    if not password:
+        fail("Password cannot be empty.")
+
+    return username, password
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Set a role-specific Thaliak Square Enix account without exposing credentials.")
+    parser.add_argument("purpose", choices=PURPOSES)
+    parser.add_argument("--db", default=os.environ.get("THALIAK_DB", DEFAULT_DB_PATH))
+    parser.add_argument(
+        "--remove",
+        action="store_true",
+        help="Remove the selected account role instead of prompting for credentials.")
+    args = parser.parse_args()
+
+    if os.geteuid() != 0:
+        fail("Run this helper with sudo.")
+
+    db_stat = os.stat(args.db)
+    purpose = PURPOSES[args.purpose]
+    with connect(args.db) as connection:
+        if args.remove:
+            removed = remove_account(connection, purpose)
+            connection.commit()
+            print(f"Removed {purpose} account." if removed else f"No {purpose} account was configured.")
+        else:
+            username, password = read_credentials()
+            action, account_id = upsert_account(connection, purpose, username, password)
+            connection.commit()
+            print(f"{purpose} account {action} as id {account_id}.")
+
+    preserve_database_permissions(args.db, db_stat)
+
+
+if __name__ == "__main__":
+    main()

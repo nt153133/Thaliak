@@ -8,6 +8,26 @@ Thaliak is a Final Fantasy XIV patch tracking, notification, and analysis servic
 A public version of the service is hosted at [thaliak.xiv.dev](https://thaliak.xiv.dev).
 Most people will likely want to use the public version, but you can also use the code in this repository to self-host your own instance.
 
+## Self-hosted Global accounts
+
+The V1 poller supports a `Routine` Square Enix account for normal checks and a separately configured
+`Expansion` account for one-shot expansion patch discovery. On a deployed Linux host, configure the
+accounts without placing credentials in shell history:
+
+```bash
+sudo thaliak-set-sqex-account routine
+sudo thaliak-set-sqex-account expansion
+```
+
+Expansion discovery runs automatically once for a newly offered Global base patch during active
+maintenance. To request one manual sweep, inspect its status, or cancel an unconsumed request:
+
+```bash
+sudo thaliak-expansion-sweep arm
+sudo thaliak-expansion-sweep status
+sudo thaliak-expansion-sweep cancel
+```
+
 ## Features
 ### Current
 - Tracks game versions for FFXIV Global, Korea, and China

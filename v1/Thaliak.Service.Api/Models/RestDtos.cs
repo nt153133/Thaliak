@@ -34,9 +34,18 @@ public sealed record PatchDto(
     [property: JsonPropertyName("hash")] PatchHashDto Hash,
     [property: JsonPropertyName("first_offered")] DateTime? FirstOffered,
     [property: JsonPropertyName("last_offered")] DateTime? LastOffered,
-    [property: JsonPropertyName("is_active")] bool IsActive);
+    [property: JsonPropertyName("is_active")] bool IsActive,
+    [property: JsonPropertyName("sources")] IReadOnlyList<PatchSourceDto> Sources);
 
 public sealed record PatchHashDto(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("block_size")] long? BlockSize = null,
     [property: JsonPropertyName("hashes")] IReadOnlyList<string>? Hashes = null);
+
+public sealed record PatchSourceDto(
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("url")] string Url,
+    [property: JsonPropertyName("supports_range_requests")] bool SupportsRangeRequests,
+    [property: JsonPropertyName("supports_multipart_ranges")] bool SupportsMultipartRanges,
+    [property: JsonPropertyName("max_ranges_per_request")] int? MaxRangesPerRequest = null,
+    [property: JsonPropertyName("max_request_bytes")] long? MaxRequestBytes = null);

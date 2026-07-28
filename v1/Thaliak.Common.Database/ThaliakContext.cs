@@ -16,11 +16,22 @@ public class ThaliakContext : DbContext
     public DbSet<XivFile> Files { get; set; }
     public DbSet<DiscordHookEntry> DiscordHooks { get; set; }
     public DbSet<XivInstallationState> InstallationStates { get; set; }
+    public DbSet<XivArtifact> Artifacts { get; set; }
+    public DbSet<XivExpansionSweepAttempt> ExpansionSweepAttempts { get; set; }
 
     public ThaliakContext(DbContextOptions options) : base(options) { }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
+        builder.Entity<XivAccount>()
+            .Property(account => account.Purpose)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        builder.Entity<XivAccount>()
+            .HasIndex(account => account.Purpose)
+            .IsUnique();
+
         //
         // Service
         //
@@ -126,6 +137,27 @@ public class ThaliakContext : DbContext
         builder.Entity<XivInstallationState>()
             .Property(state => state.Status)
             .HasConversion<string>();
+
+        builder.Entity<XivArtifact>()
+            .Property(artifact => artifact.Kind)
+            .HasMaxLength(16);
+
+        builder.Entity<XivArtifact>()
+            .Property(artifact => artifact.Region)
+            .HasMaxLength(32);
+
+        builder.Entity<XivArtifact>()
+            .Property(artifact => artifact.RepositorySlug)
+            .HasMaxLength(16);
+
+        builder.Entity<XivArtifact>()
+            .Property(artifact => artifact.Status)
+            .HasMaxLength(16);
+
+        builder.Entity<XivArtifact>()
+            .Property(artifact => artifact.Sha256)
+            .HasMaxLength(64)
+            .IsFixedLength();
         
         //
         // ExpansionRepositoryMapping
@@ -181,6 +213,30 @@ public class ThaliakContext : DbContext
         builder.Entity<XivRepository>()
             .Property(r => r.Slug)
             .UsePropertyAccessMode(PropertyAccessMode.Property);
+
+        builder.Entity<XivExpansionSweepAttempt>()
+            .Property(attempt => attempt.TriggerKey)
+            .HasMaxLength(80);
+
+        builder.Entity<XivExpansionSweepAttempt>()
+            .Property(attempt => attempt.Trigger)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        builder.Entity<XivExpansionSweepAttempt>()
+            .Property(attempt => attempt.Status)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        builder.Entity<XivExpansionSweepAttempt>()
+            .Property(attempt => attempt.LastError)
+            .HasMaxLength(256);
+
+        builder.Entity<XivExpansionSweepAttempt>()
+            .HasOne(attempt => attempt.TriggerRepoVersion)
+            .WithMany()
+            .HasForeignKey(attempt => attempt.TriggerRepoVersionId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         //
         // Data Seeding

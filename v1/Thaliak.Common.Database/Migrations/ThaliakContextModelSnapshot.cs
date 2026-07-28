@@ -51,6 +51,12 @@ namespace Thaliak.Common.Database.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("password");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("purpose");
+
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -59,7 +65,95 @@ namespace Thaliak.Common.Database.Migrations
                     b.HasKey("Id")
                         .HasName("pk_accounts");
 
+                    b.HasIndex("Purpose")
+                        .IsUnique()
+                        .HasDatabaseName("ix_accounts_purpose");
+
                     b.ToTable("accounts", (string)null);
+                });
+
+            modelBuilder.Entity("Thaliak.Common.Database.Models.XivArtifact", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("error");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime?>("NotifiedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("notified_at_utc");
+
+                    b.Property<DateTime?>("ReadyAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("ready_at_utc");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("region");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("relative_path");
+
+                    b.Property<string>("RepositorySlug")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("repository_slug");
+
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("sha256")
+                        .IsFixedLength();
+
+                    b.Property<long>("Size")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("size");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<string>("VersionString")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("version_string");
+
+                    b.HasKey("Id")
+                        .HasName("pk_artifacts");
+
+                    b.HasIndex("Kind", "Region", "VersionString")
+                        .HasDatabaseName("ix_artifacts_kind_region_version_string");
+
+                    b.HasIndex("Kind", "RepositorySlug", "VersionString")
+                        .IsUnique()
+                        .HasDatabaseName("ix_artifacts_kind_repository_slug_version_string");
+
+                    b.ToTable("artifacts", (string)null);
                 });
 
             modelBuilder.Entity("Thaliak.Common.Database.Models.XivExpansionRepositoryMapping", b =>
@@ -229,6 +323,76 @@ namespace Thaliak.Common.Database.Migrations
                             ExpansionId = 5,
                             ExpansionRepositoryId = 25
                         });
+                });
+
+            modelBuilder.Entity("Thaliak.Common.Database.Models.XivExpansionSweepAttempt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<DateTime>("DetectedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("detected_at_utc");
+
+                    b.Property<int?>("DiscoveredPatchCount")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("discovered_patch_count");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("last_error");
+
+                    b.Property<int?>("MaxExpansion")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("max_expansion");
+
+                    b.Property<DateTime?>("StartedAtUtc")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("trigger");
+
+                    b.Property<string>("TriggerKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("trigger_key");
+
+                    b.Property<int>("TriggerRepoVersionId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("trigger_repo_version_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_expansion_sweep_attempts");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_expansion_sweep_attempts_status");
+
+                    b.HasIndex("TriggerKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_expansion_sweep_attempts_trigger_key");
+
+                    b.HasIndex("TriggerRepoVersionId")
+                        .HasDatabaseName("ix_expansion_sweep_attempts_trigger_repo_version_id");
+
+                    b.ToTable("expansion_sweep_attempts", (string)null);
                 });
 
             modelBuilder.Entity("Thaliak.Common.Database.Models.XivFile", b =>
@@ -879,6 +1043,18 @@ namespace Thaliak.Common.Database.Migrations
                     b.Navigation("ExpansionRepository");
 
                     b.Navigation("GameRepository");
+                });
+
+            modelBuilder.Entity("Thaliak.Common.Database.Models.XivExpansionSweepAttempt", b =>
+                {
+                    b.HasOne("Thaliak.Common.Database.Models.XivRepoVersion", "TriggerRepoVersion")
+                        .WithMany()
+                        .HasForeignKey("TriggerRepoVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_expansion_sweep_attempts_repo_versions_trigger_repo_version_id");
+
+                    b.Navigation("TriggerRepoVersion");
                 });
 
             modelBuilder.Entity("Thaliak.Common.Database.Models.XivGameVersion", b =>

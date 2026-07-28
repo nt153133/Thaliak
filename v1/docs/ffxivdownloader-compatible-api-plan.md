@@ -37,6 +37,19 @@ Expose these endpoints under `/api/v2beta`:
 - `GET /repositories/{slug}/patches?from=&to=&all=&active=`
 - `GET /repositories/{slug}/patches/{version}`
 
+Patch responses also publish an ordered `sources` array. A source includes its URL,
+range support, multipart range support, and optional per-request range/byte limits.
+The original regional publisher URL remains in `remote_url` and as the final source.
+
+Downloaded archive files are available through:
+
+- `GET|HEAD /patches/{slug}/{fullPatchVersion}.patch`
+
+The archive route resolves the full patch filename (`D...`, `H...`, and section
+suffixes) through the database, serves only complete files beneath `Artifacts:PatchRoot`,
+and supports bounded single or multipart byte ranges. It never proxies an archive miss
+to the regional publisher.
+
 Repository responses match the `RepositoryV2` wire shape expected by FFXIVDownloader:
 
 - `service_id`

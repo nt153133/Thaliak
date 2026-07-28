@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Thaliak.Common.Database;
 using Thaliak.Common.Database.Models;
@@ -25,6 +27,46 @@ public sealed class SqliteDatabaseTests
         Assert.True(await db.ExpansionRepositoryMappings.AnyAsync(m =>
             m.GameRepositoryId == 20 && m.ExpansionId == 5 && m.ExpansionRepositoryId == 25));
         Assert.Empty(await db.InstallationStates.ToListAsync());
+        Assert.Empty(await db.ExpansionSweepAttempts.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Migrate_ExistingAccount_AssignsRoutinePurpose()
+    {
+        await using var db = CreateContext();
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("20260708164036_AddArtifactTracking");
+        await db.Database.ExecuteSqlRawAsync(
+            "insert into accounts (username, password) values ('trial', 'secret')");
+
+        await migrator.MigrateAsync();
+
+        var account = await db.Accounts.SingleAsync();
+        Assert.Equal(XivAccountPurpose.Routine, account.Purpose);
+    }
+
+    [Fact]
+    public async Task Accounts_WhenPurposeIsDuplicated_RejectsSecondAccount()
+    {
+        await using var db = CreateContext();
+        await db.Database.MigrateAsync();
+        db.Accounts.AddRange(
+            new XivAccount
+            {
+                Purpose = XivAccountPurpose.Routine,
+                Username = "first",
+                Password = "secret",
+                ApplicableRepositories = []
+            },
+            new XivAccount
+            {
+                Purpose = XivAccountPurpose.Routine,
+                Username = "second",
+                Password = "secret",
+                ApplicableRepositories = []
+            });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
     }
 
     [Fact]
@@ -108,6 +150,24 @@ public sealed class SqliteDatabaseTests
                 "2024.05.31.0000.0000"
             ],
             chain.Select(patch => patch.RepoVersion.VersionString));
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_WhenScrapedPatchBecomesOffered_ReturnsItOnlyOnce()
+    {
+        await using var db = CreateContext();
+        await db.Database.MigrateAsync();
+        var service = new PatchReconciliationService(db, CreatePatchAlertQueueService(db));
+        var repo = await db.Repositories.SingleAsync(repository => repository.Id == 20);
+        PatchListEntry[] patches = [CreateTcPatch("2026.06.23.0000.0000")];
+
+        var scraped = await service.ReconcileAsync(repo, patches, PatchDiscoveryType.Scraped);
+        var offered = await service.ReconcileAsync(repo, patches, PatchDiscoveryType.Offered);
+        var repeated = await service.ReconcileAsync(repo, patches, PatchDiscoveryType.Offered);
+
+        Assert.Empty(scraped.NewlyOfferedPatches);
+        Assert.Single(offered.NewlyOfferedPatches);
+        Assert.Empty(repeated.NewlyOfferedPatches);
     }
 
     [Fact]

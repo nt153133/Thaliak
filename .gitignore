@@ -13,3 +13,5 @@ target/
 *.db*
 gameroot/
 
+__pycache__/
+*.py[cod]

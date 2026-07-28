@@ -5,7 +5,9 @@ using Thaliak.Service.Api.Models;
 
 namespace Thaliak.Service.Api.Services;
 
-public sealed class ThaliakReadService(ThaliakContext db)
+public sealed class ThaliakReadService(
+    ThaliakContext db,
+    PatchArchiveService patchArchiveService)
 {
     private readonly PatchChainResolver _patchChainResolver = new(db);
 
@@ -67,12 +69,30 @@ public sealed class ThaliakReadService(ThaliakContext db)
             return null;
         }
 
-        var patch = await PatchQuery(repository.Id)
-            .Where(patch => patch.RepoVersion.VersionString == version)
-            .OrderBy(patch => patch.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        string repositoryVersion;
+        try {
+            repositoryVersion = XivRepoVersion.UrlToString(version);
+        }
+        catch (ArgumentException) {
+            return null;
+        }
 
-        return patch is null ? null : ToPatchDto(repository.Slug, patch);
+        var patch = await PatchQuery(repository.Id)
+            .Where(patch => patch.RepoVersion.VersionString == repositoryVersion)
+            .OrderBy(patch => patch.Id)
+            .ToListAsync(cancellationToken);
+
+        var exactPatch = patch.FirstOrDefault(candidate =>
+            string.Equals(
+                GetPatchVersion(candidate.RemoteOriginPath),
+                version,
+                StringComparison.OrdinalIgnoreCase));
+        if (exactPatch is null
+            && string.Equals(version, repositoryVersion, StringComparison.OrdinalIgnoreCase)) {
+            exactPatch = patch.FirstOrDefault();
+        }
+
+        return exactPatch is null ? null : ToPatchDto(repository.Slug, exactPatch);
     }
 
     public async Task<GraphQlRepositoryDto?> GetGraphQlMetadataAsync(string slug, CancellationToken cancellationToken)
@@ -231,7 +251,7 @@ public sealed class ThaliakReadService(ThaliakContext db)
                     latestPatch.FirstOffered ?? DateTime.UnixEpoch,
                     latestPatch.LastOffered ?? DateTime.UnixEpoch));
 
-    private static PatchDto ToPatchDto(string repositorySlug, XivPatch patch) =>
+    private PatchDto ToPatchDto(string repositorySlug, XivPatch patch) =>
         new(
             repositorySlug,
             patch.RepoVersion.VersionString,
@@ -243,7 +263,8 @@ public sealed class ThaliakReadService(ThaliakContext db)
             ToPatchHashDto(patch),
             patch.FirstOffered,
             patch.LastOffered,
-            patch.IsActive);
+            patch.IsActive,
+            patchArchiveService.GetSources(repositorySlug, patch));
 
     private static PatchHashDto ToPatchHashDto(XivPatch patch)
     {
@@ -267,4 +288,12 @@ public sealed class ThaliakReadService(ThaliakContext db)
 
     private static string VersionSortKey(string versionString) =>
         versionString.TrimStart('H', 'D');
+
+    private static string GetPatchVersion(string patchUrl)
+    {
+        var path = Uri.TryCreate(patchUrl, UriKind.Absolute, out var uri)
+            ? uri.AbsolutePath
+            : patchUrl;
+        return Path.GetFileNameWithoutExtension(path);
+    }
 }

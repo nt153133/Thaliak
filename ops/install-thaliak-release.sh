@@ -11,6 +11,7 @@ release="$(date -u +%Y%m%d%H%M%S)"
 release_dir="/opt/thaliak/releases/$release"
 
 install -d -m 750 -o thaliak -g thaliak /srv/thaliak/installs
+install -d -m 750 -o thaliak -g thaliak /srv/thaliak/control
 if [[ -d /srv/thaliak/boot && ! -e /srv/thaliak/installs/global ]]; then
     mv /srv/thaliak/boot /srv/thaliak/installs/global
 fi
@@ -27,6 +28,12 @@ rm -f "$archive"
 chown -R root:root "$release_dir"
 chmod -R u=rwX,go=rX "$release_dir"
 chmod 755 "$release_dir/Thaliak.Service.Poller"
+install -m 700 -o root -g root \
+    "$release_dir/ops/thaliak-set-sqex-account" \
+    /usr/local/sbin/thaliak-set-sqex-account
+install -m 700 -o root -g root \
+    "$release_dir/ops/thaliak-expansion-sweep" \
+    /usr/local/sbin/thaliak-expansion-sweep
 
 rm -rf /opt/thaliak/current
 ln -s "$release_dir" /opt/thaliak/current
@@ -48,6 +55,9 @@ Polling__DisableKoreaChecks=true
 Polling__DailyCheckTimePacific=09:00
 Polling__MaintenanceActivePollMinutes=2
 Polling__TraditionalChineseMaintenancePollMinutes=30
+Polling__GlobalExpansionSweep__Enabled=true
+Polling__GlobalExpansionSweep__RequiredMaxExpansion=5
+Polling__GlobalExpansionSweep__ManualArmPath=/srv/thaliak/control/global-expansion-sweep.arm
 Notifications__QuietWindowMinutes=3
 Notifications__NotifyScrapedPatches=false
 Notifications__SuppressBootPatchAlerts=true
@@ -76,6 +86,9 @@ else
     set_env_value Directories__Boot /srv/thaliak/installs/global
     set_env_default Installations__Enabled false
     set_env_default Installations__Root /srv/thaliak/installs
+    set_env_default Polling__GlobalExpansionSweep__Enabled true
+    set_env_default Polling__GlobalExpansionSweep__RequiredMaxExpansion 5
+    set_env_value Polling__GlobalExpansionSweep__ManualArmPath /srv/thaliak/control/global-expansion-sweep.arm
     if ! grep -q "^Installations__Regions__[0-9][0-9]*=" "$env_file"; then
         printf '%s\n' \
             "Installations__Regions__0=Global" \
