@@ -69,30 +69,11 @@ public sealed class ThaliakReadService(
             return null;
         }
 
-        string repositoryVersion;
-        try {
-            repositoryVersion = XivRepoVersion.UrlToString(version);
-        }
-        catch (ArgumentException) {
-            return null;
-        }
-
-        var patch = await PatchQuery(repository.Id)
-            .Where(patch => patch.RepoVersion.VersionString == repositoryVersion)
-            .OrderBy(patch => patch.Id)
-            .ToListAsync(cancellationToken);
-
-        var exactPatch = patch.FirstOrDefault(candidate =>
-            string.Equals(
-                GetPatchVersion(candidate.RemoteOriginPath),
-                version,
-                StringComparison.OrdinalIgnoreCase));
-        if (exactPatch is null
-            && string.Equals(version, repositoryVersion, StringComparison.OrdinalIgnoreCase)) {
-            exactPatch = patch.FirstOrDefault();
-        }
-
-        return exactPatch is null ? null : ToPatchDto(repository.Slug, exactPatch);
+        var patch = await RepositoryPatchLookup.FindAsync(
+            PatchQuery(repository.Id),
+            version,
+            cancellationToken);
+        return patch is null ? null : ToPatchDto(repository.Slug, patch);
     }
 
     public async Task<GraphQlRepositoryDto?> GetGraphQlMetadataAsync(string slug, CancellationToken cancellationToken)
@@ -289,11 +270,4 @@ public sealed class ThaliakReadService(
     private static string VersionSortKey(string versionString) =>
         versionString.TrimStart('H', 'D');
 
-    private static string GetPatchVersion(string patchUrl)
-    {
-        var path = Uri.TryCreate(patchUrl, UriKind.Absolute, out var uri)
-            ? uri.AbsolutePath
-            : patchUrl;
-        return Path.GetFileNameWithoutExtension(path);
-    }
 }

@@ -21,28 +21,12 @@ public sealed class PatchArchiveService(
         string patchVersion,
         CancellationToken cancellationToken)
     {
-        string repositoryVersion;
-        try {
-            repositoryVersion = XivRepoVersion.UrlToString(patchVersion);
-        }
-        catch (ArgumentException) {
-            return null;
-        }
-
-        var candidates = await db.Patches
+        var candidates = db.Patches
             .AsNoTracking()
             .Include(patch => patch.RepoVersion)
             .ThenInclude(version => version.Repository)
-            .Where(patch => patch.RepoVersion.Repository.Slug == repositorySlug)
-            .Where(patch => patch.RepoVersion.VersionString == repositoryVersion)
-            .OrderBy(patch => patch.Id)
-            .ToListAsync(cancellationToken);
-
-        var patch = candidates.FirstOrDefault(candidate =>
-            string.Equals(
-                GetPatchVersion(candidate.RemoteOriginPath),
-                patchVersion,
-                StringComparison.OrdinalIgnoreCase));
+            .Where(patch => patch.RepoVersion.Repository.Slug == repositorySlug);
+        var patch = await RepositoryPatchLookup.FindAsync(candidates, patchVersion, cancellationToken);
         if (patch is null || !TryResolveLocalFile(patch, out var fileInfo)) {
             return null;
         }
@@ -75,7 +59,7 @@ public sealed class PatchArchiveService(
     private string BuildArchiveUrl(string repositorySlug, XivPatch patch)
     {
         var path = $"/patches/{Uri.EscapeDataString(repositorySlug)}/"
-                   + $"{Uri.EscapeDataString(GetPatchVersion(patch.RemoteOriginPath))}.patch";
+                   + $"{Uri.EscapeDataString(RepositoryPatchLookup.GetPatchVersion(patch.RemoteOriginPath))}.patch";
         return string.IsNullOrWhiteSpace(_options.PublicBaseUrl)
             ? path
             : $"{_options.PublicBaseUrl.TrimEnd('/')}{path}";
@@ -110,13 +94,6 @@ public sealed class PatchArchiveService(
         return fileInfo.Exists && (patch.Size <= 0 || fileInfo.Length == patch.Size);
     }
 
-    private static string GetPatchVersion(string patchUrl)
-    {
-        var path = Uri.TryCreate(patchUrl, UriKind.Absolute, out var uri)
-            ? uri.AbsolutePath
-            : patchUrl;
-        return Path.GetFileNameWithoutExtension(path);
-    }
 }
 
 public sealed record PatchArchiveLookup(XivPatch Patch, FileInfo File);

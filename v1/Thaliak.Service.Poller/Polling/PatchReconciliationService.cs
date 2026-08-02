@@ -26,6 +26,10 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
         db.Repositories.AttachRange(expansions.Select(erp => erp.ExpansionRepository));
 
         var repoIds = new[] {repo.Id}.Union(expansions.Select(erp => erp.ExpansionRepositoryId)).ToArray();
+        var offeredRepoIds = remotePatches
+            .Select(patch => GetEffectiveRepositoryId(expansions, repo.Id, patch.Url))
+            .Distinct()
+            .ToArray();
         var localPatches = db.Patches
             .Include(p => p.RepoVersion)
             .Where(p => repoIds.Contains(p.RepoVersion.RepositoryId));
@@ -54,13 +58,13 @@ public class PatchReconciliationService(ThaliakContext db, PatchAlertQueueServic
             db.SaveChanges();
         }
 
-        foreach (var repoId in repoIds) {
+        foreach (var repoId in offeredRepoIds) {
             var expansionPatches = remotePatches.Where(p =>
                 GetEffectiveRepositoryId(expansions, repo.Id, p.Url) == repoId);
             RecordUpgradePathData(now, repoId, expansionPatches);
         }
 
-        foreach (var repoId in repoIds) {
+        foreach (var repoId in offeredRepoIds) {
             RecordActiveStatus(now, repoId);
         }
 

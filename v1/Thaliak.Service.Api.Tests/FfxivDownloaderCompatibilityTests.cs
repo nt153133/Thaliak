@@ -243,6 +243,36 @@ public sealed class FfxivDownloaderCompatibilityTests(FfxivDownloaderCompatibili
     }
 
     [Fact]
+    public async Task PatchMetadata_ResolvesTcPatchByFilenameVersionWhenPrerequisiteDiffers()
+    {
+        using var response = await fixture.Client.GetAsync(
+            $"/api/v2beta/repositories/{TestData.TcRepositorySlug}/patches/D{TestData.TcPatchVersion}");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        var sources = root.GetProperty("sources").EnumerateArray().ToArray();
+
+        Assert.Equal(TestData.TcPrerequisiteVersion, root.GetProperty("version_string").GetString());
+        Assert.Equal(TestData.TcPatchUrl, root.GetProperty("remote_url").GetString());
+        Assert.Equal("archive", sources[0].GetProperty("type").GetString());
+        Assert.Equal(
+            $"https://api.example.test/patches/{TestData.TcRepositorySlug}/{TestData.TcPatchVersionHyphenated}.patch",
+            sources[0].GetProperty("url").GetString());
+        Assert.Equal("origin", sources[1].GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task PatchArchive_ServesTcPatchWhenPrerequisiteVersionDiffers()
+    {
+        using var response = await fixture.Client.GetAsync(
+            $"/patches/{TestData.TcRepositorySlug}/{TestData.TcPatchVersionHyphenated}.patch");
+        response.EnsureSuccessStatusCode();
+
+        Assert.Equal(TestData.PatchBytes, await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
     public async Task PatchArchive_ServesSingleAndMultipartRanges()
     {
         var path = $"/patches/{TestData.RepositorySlug}/D{TestData.LatestVersion}.patch";
@@ -455,6 +485,7 @@ public sealed class FfxivDownloaderCompatibilityFixture : IAsyncLifetime
         await db.Database.EnsureCreatedAsync();
 
         var repository = await db.Repositories.SingleAsync(repository => repository.Slug == TestData.RepositorySlug);
+        var tcRepository = await db.Repositories.SingleAsync(repository => repository.Slug == TestData.TcRepositorySlug);
 
         var previousVersion = new XivRepoVersion
         {
@@ -500,11 +531,38 @@ public sealed class FfxivDownloaderCompatibilityFixture : IAsyncLifetime
         };
         db.Patches.AddRange(previousPatch, latestPatch);
 
+        var tcPrerequisiteVersion = new XivRepoVersion
+        {
+            RepositoryId = tcRepository.Id,
+            VersionString = TestData.TcPrerequisiteVersion
+        };
+        db.RepoVersions.Add(tcPrerequisiteVersion);
+        await db.SaveChangesAsync();
+
+        var tcPatch = new XivPatch
+        {
+            RepoVersionId = tcPrerequisiteVersion.Id,
+            RemoteOriginPath = TestData.TcPatchUrl,
+            FirstSeen = TestData.LatestOfferedAt,
+            LastSeen = TestData.LatestOfferedAt,
+            FirstOffered = TestData.LatestOfferedAt,
+            LastOffered = TestData.LatestOfferedAt,
+            Size = TestData.LatestPatchSize,
+            IsActive = true
+        };
+        db.Patches.Add(tcPatch);
+
         var latestPatchPath = Path.Combine(
             _patchRoot,
             latestPatch.LocalStoragePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(latestPatchPath)!);
         await File.WriteAllBytesAsync(latestPatchPath, TestData.PatchBytes);
+
+        var tcPatchPath = Path.Combine(
+            _patchRoot,
+            tcPatch.LocalStoragePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(tcPatchPath)!);
+        await File.WriteAllBytesAsync(tcPatchPath, TestData.PatchBytes);
 
         db.UpgradePaths.Add(new XivUpgradePath
         {
@@ -549,6 +607,11 @@ internal static class TestData
     public const string PreviousPatchUrl = "http://patch-dl.ffxiv.com/game/4e9a232b/D2026.06.10.0000.0000.patch";
     public const string LatestPatchUrl = "http://patch-dl.ffxiv.com/game/4e9a232b/D2026.06.11.0000.0000.patch";
     public const string TcRepositorySlug = "961a4536";
+    public const string TcPrerequisiteVersion = "2012.01.01.0013.0000";
+    public const string TcPatchVersion = "2026.07.22.0001.0000";
+    public const string TcPatchVersionHyphenated = "2026-07-22-0001-0000";
+    public const string TcPatchUrl =
+        "https://mydownloadakamai.ffxiv.com.tw/ffxiv/260722/ex0/2026-07-22-0001-0000.patch";
     public const string ArtifactSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     public const long PreviousPatchSize = 1024;
     public const long LatestPatchSize = 2048;

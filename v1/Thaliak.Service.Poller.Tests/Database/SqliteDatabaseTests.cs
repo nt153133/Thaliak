@@ -171,6 +171,40 @@ public sealed class SqliteDatabaseTests
     }
 
     [Fact]
+    public async Task ReconcileAsync_AfterFullExpansionSweep_LimitedRoutinePollPreservesUnrepresentedExpansions()
+    {
+        await using var db = CreateContext();
+        await db.Database.MigrateAsync();
+        var service = new PatchReconciliationService(db, CreatePatchAlertQueueService(db));
+        var repo = await db.Repositories.SingleAsync(repository => repository.Id == 2);
+        var fullSweepPatches = Enumerable.Range(0, 6)
+            .Select(expansion => CreateGlobalPatch(expansion, $"2026.07.{10 + expansion:00}.0000.0000"))
+            .ToArray();
+
+        await service.ReconcileAsync(repo, fullSweepPatches, PatchDiscoveryType.Offered);
+        await service.ReconcileAsync(
+            repo,
+            [
+                .. Enumerable.Range(0, 3)
+                    .Select(expansion => CreateGlobalPatch(expansion, $"2026.07.{10 + expansion:00}.0000.0000")),
+                CreateGlobalPatch(3, "2026.07.20.0000.0000")
+            ],
+            PatchDiscoveryType.Offered);
+
+        var patchStates = await db.Patches
+            .Include(patch => patch.RepoVersion)
+            .Where(patch => new[] { 5, 6, 17 }.Contains(patch.RepoVersion.RepositoryId))
+            .ToDictionaryAsync(
+                patch => (patch.RepoVersion.RepositoryId, patch.RepoVersion.VersionString),
+                patch => patch.IsActive);
+
+        Assert.False(patchStates[(5, "2026.07.13.0000.0000")]);
+        Assert.True(patchStates[(5, "2026.07.20.0000.0000")]);
+        Assert.True(patchStates[(6, "2026.07.14.0000.0000")]);
+        Assert.True(patchStates[(17, "2026.07.15.0000.0000")]);
+    }
+
+    [Fact]
     public async Task PatchChainResolver_IgnoresSelfLoopAndOmitsStubPayload()
     {
         await using var db = CreateContext();
@@ -219,6 +253,19 @@ public sealed class SqliteDatabaseTests
             VersionId = version,
             HashType = "sha1",
             Url = $"https://mydownloadakamai.ffxiv.com.tw/ffxiv/260515/ex0/{version}.patch",
+            HashBlockSize = 0,
+            Hashes = [],
+            Length = 1024
+        };
+
+    private static PatchListEntry CreateGlobalPatch(int expansion, string version) =>
+        new()
+        {
+            VersionId = version,
+            HashType = "sha1",
+            Url = expansion == 0
+                ? $"https://patch-dl.ffxiv.com/game/4e9a232b/D{version}.patch"
+                : $"https://patch-dl.ffxiv.com/game/ex{expansion}/D{version}.patch",
             HashBlockSize = 0,
             Hashes = [],
             Length = 1024

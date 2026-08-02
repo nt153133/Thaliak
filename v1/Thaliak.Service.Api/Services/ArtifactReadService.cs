@@ -17,8 +17,9 @@ public sealed class ArtifactReadService(
     public async Task<ArtifactRegionsResponseDto> GetRegionsAsync(CancellationToken cancellationToken)
     {
         var artifacts = await GetReadyArtifactsAsync(cancellationToken);
+        var latestActiveVersions = await GetLatestActiveVersionsAsync(cancellationToken);
         var regions = ArtifactTargetCatalog.Regions
-            .Select(region => BuildRegionDto(region, artifacts))
+            .Select(region => BuildRegionDto(region, artifacts, latestActiveVersions))
             .ToArray();
 
         return new ArtifactRegionsResponseDto(regions);
@@ -31,7 +32,8 @@ public sealed class ArtifactReadService(
         }
 
         var artifacts = await GetReadyArtifactsAsync(cancellationToken);
-        return BuildRegionDto(region, artifacts);
+        var latestActiveVersions = await GetLatestActiveVersionsAsync(cancellationToken);
+        return BuildRegionDto(region, artifacts, latestActiveVersions);
     }
 
     public async Task<ArtifactFileLookup?> GetFileAsync(
@@ -75,13 +77,48 @@ public sealed class ArtifactReadService(
             .Where(artifact => artifact.Status == "ready")
             .ToListAsync(cancellationToken);
 
-    private ArtifactRegionDto BuildRegionDto(string region, IReadOnlyList<XivArtifact> artifacts)
+    private async Task<IReadOnlyDictionary<string, string>> GetLatestActiveVersionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var activeVersions = await db.Patches
+            .AsNoTracking()
+            .Where(patch => patch.IsActive)
+            .Select(patch => new
+            {
+                patch.Id,
+                patch.RepoVersion.Repository.Slug,
+                patch.RepoVersion.VersionString
+            })
+            .ToListAsync(cancellationToken);
+
+        return activeVersions
+            .GroupBy(version => version.Slug, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(version => VersionSortKey(version.VersionString), StringComparer.Ordinal)
+                    .ThenByDescending(version => version.Id)
+                    .Select(version => version.VersionString)
+                    .First(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private ArtifactRegionDto BuildRegionDto(
+        string region,
+        IReadOnlyList<XivArtifact> artifacts,
+        IReadOnlyDictionary<string, string> latestActiveVersions)
     {
         var repositories = ArtifactTargetCatalog.ForRegion(region)
             .Select(target => BuildRepositoryDto(target, artifacts))
             .ToArray();
 
-        var isReady = repositories.Length > 0 && repositories.All(repository => repository.LatestClut is not null);
+        var isReady = repositories.Length > 0 && repositories.All(repository =>
+            repository.LatestClut is not null
+            && latestActiveVersions.TryGetValue(repository.Slug, out var latestActiveVersion)
+            && string.Equals(
+                repository.LatestClut.VersionString,
+                latestActiveVersion,
+                StringComparison.Ordinal));
         var readyAtUtc = isReady
             ? repositories
                 .Select(repository => repository.LatestClut?.ReadyAtUtc)
