@@ -9,9 +9,16 @@ public class LodestoneMaintenanceService(HttpClient http) : IPoller
 {
     private const string NewsFeedUrl = "https://na.finalfantasyxiv.com/lodestone/news/news.xml";
 
-    private static readonly Regex MaintenanceTimeRegex =
+    private static readonly Regex StandardMaintenanceTimeRegex =
         new(@"\[Date & Time\][\n\r]+([\w\d,:. ]+) to ([\w\d,:. ]+) \((\w{3})\)",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ScheduledMaintenanceTimeRegex =
+        new(@"from\s+(?<startTime>\d{1,2}(?::\d{2})?\s+[ap]\.m\.)\s+on\s+" +
+            @"(?<startDate>[a-z]+\.?\s+\d{1,2},\s+\d{4})\s+to\s+(?:approximately\s+)?" +
+            @"(?<endTime>\d{1,2}(?::\d{2})?\s+[ap]\.m\.)\s+on\s+" +
+            @"(?<endDate>[a-z]+\.?\s+\d{1,2},\s+\d{4})\s+\((?<zone>\w{3})\)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public static HashSet<MaintenanceInfo> MaintenanceList { get; } = new();
 
@@ -59,7 +66,7 @@ public class LodestoneMaintenanceService(HttpClient http) : IPoller
         }
 
         return feed.Entry
-            .Where(entry => string.Equals(entry.Category?.Term, "Maintenance", StringComparison.OrdinalIgnoreCase))
+            .Where(entry => IsMaintenanceCategory(entry.Category?.Term))
             .Where(entry => entry.Title.Contains("All Worlds", StringComparison.OrdinalIgnoreCase) &&
                             entry.Title.Contains("Maintenance", StringComparison.OrdinalIgnoreCase))
             .Select(entry => TryCreateMaintenanceInfo(entry, nowUtc))
@@ -71,13 +78,11 @@ public class LodestoneMaintenanceService(HttpClient http) : IPoller
     private static MaintenanceInfo? TryCreateMaintenanceInfo(LodestoneFeedEntry entry, DateTime nowUtc)
     {
         var text = entry.Content?.GetText() ?? string.Empty;
-        var timeMatch = MaintenanceTimeRegex.Match(text);
-        if (!timeMatch.Success) {
+        if (!TryParseMaintenanceWindow(text, out var start, out var end, out var zone)) {
             Log.Warning("Could not find maintenance time for Lodestone feed entry {Title}", entry.Title);
             return null;
         }
 
-        var zone = timeMatch.Groups[3].Value;
         var utcOffset = zone switch
         {
             "PDT" => TimeSpan.FromHours(-7),
@@ -85,8 +90,6 @@ public class LodestoneMaintenanceService(HttpClient http) : IPoller
             _ => throw new InvalidDataException($"Unknown Lodestone maintenance timezone: {zone}")
         };
 
-        var start = ParseFeedMaintenanceTime(timeMatch.Groups[1].Value);
-        var end = ParseFeedMaintenanceTime(timeMatch.Groups[2].Value, start);
         var startUtc = new DateTimeOffset(start, utcOffset).UtcDateTime;
         var endUtc = new DateTimeOffset(end, utcOffset).UtcDateTime;
         if (endUtc < startUtc) {
@@ -96,6 +99,42 @@ public class LodestoneMaintenanceService(HttpClient http) : IPoller
         return endUtc < nowUtc.AddDays(-1)
             ? null
             : new MaintenanceInfo(startUtc, endUtc, entry.Title);
+    }
+
+    private static bool IsMaintenanceCategory(string? category)
+    {
+        return string.Equals(category, "Maintenance", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(category, "Notices", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryParseMaintenanceWindow(
+        string text,
+        out DateTime start,
+        out DateTime end,
+        out string zone)
+    {
+        var standardMatch = StandardMaintenanceTimeRegex.Match(text);
+        if (standardMatch.Success) {
+            start = ParseFeedMaintenanceTime(standardMatch.Groups[1].Value);
+            end = ParseFeedMaintenanceTime(standardMatch.Groups[2].Value, start);
+            zone = standardMatch.Groups[3].Value.ToUpperInvariant();
+            return true;
+        }
+
+        var scheduledMatch = ScheduledMaintenanceTimeRegex.Match(text);
+        if (scheduledMatch.Success) {
+            start = ParseFeedMaintenanceTime(
+                $"{scheduledMatch.Groups["startDate"].Value} {scheduledMatch.Groups["startTime"].Value}");
+            end = ParseFeedMaintenanceTime(
+                $"{scheduledMatch.Groups["endDate"].Value} {scheduledMatch.Groups["endTime"].Value}");
+            zone = scheduledMatch.Groups["zone"].Value.ToUpperInvariant();
+            return true;
+        }
+
+        start = default;
+        end = default;
+        zone = string.Empty;
+        return false;
     }
 
     private static DateTime ParseFeedMaintenanceTime(string value, DateTime? defaultDate = null)

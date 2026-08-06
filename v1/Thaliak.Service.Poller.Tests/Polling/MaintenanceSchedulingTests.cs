@@ -82,6 +82,33 @@ public sealed class MaintenanceSchedulingTests : IDisposable
     }
 
     [Fact]
+    public void ParseMaintenanceInfos_ReturnsScheduledAllWorldsMaintenanceFromNoticesCategory()
+    {
+        const string xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <title>All Worlds Emergency Maintenance (Aug. 6): Scheduled</title>
+                <category term="Notices" />
+                <content type="html">The emergency maintenance is scheduled to take place from 11:00 p.m. on Aug. 6, 2026 to approximately 3:00 a.m. on Aug. 7, 2026  (PDT).</content>
+              </entry>
+              <entry>
+                <title>Actions Taken Against In-Game RMT &amp; Other Illicit Activities (Aug. 6)</title>
+                <category term="Notices" />
+                <content type="html">This is not a maintenance announcement.</content>
+              </entry>
+            </feed>
+            """;
+
+        var maintenance = Assert.Single(LodestoneMaintenanceService.ParseMaintenanceInfos(xml,
+            new DateTime(2026, 8, 6, 13, 0, 0, DateTimeKind.Utc)));
+
+        Assert.Equal("All Worlds Emergency Maintenance (Aug. 6): Scheduled", maintenance.Title);
+        Assert.Equal(new DateTime(2026, 8, 7, 6, 0, 0, DateTimeKind.Utc), maintenance.StartTime);
+        Assert.Equal(new DateTime(2026, 8, 7, 10, 0, 0, DateTimeKind.Utc), maintenance.EndTime);
+    }
+
+    [Fact]
     public void IsMaintenanceNotice_FiltersOutNonGameTraditionalChineseMaintenance()
     {
         Assert.True(TraditionalChineseMaintenanceService.IsMaintenanceNotice(
