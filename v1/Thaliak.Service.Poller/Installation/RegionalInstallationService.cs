@@ -5,6 +5,7 @@ using Serilog;
 using Thaliak.Common.Database;
 using Thaliak.Common.Database.Models;
 using Thaliak.Service.Poller.Patch;
+using GameVersion = FFXIVDownloader.Thaliak.GameVersion;
 
 namespace Thaliak.Service.Poller.Installation;
 
@@ -147,21 +148,43 @@ public sealed class RegionalInstallationService(
             var installedIndex = FindPatchIndex(chain, state.LastAppliedPatchId.Value);
             if (installedIndex < 0)
             {
-                SetStatus(
+                var rebasePlan = await TryPlanSupersededPatchRebaseAsync(
+                    repositoryId,
                     state,
-                    InstallationStatus.NeedsRebuild,
-                    $"Applied patch {state.LastAppliedPatchId} is not present in the active chain.");
-                await db.SaveChangesAsync(cancellationToken);
-                return FinishRepository(
+                    chain,
+                    cancellationToken);
+                if (rebasePlan is null)
+                {
+                    SetStatus(
+                        state,
+                        InstallationStatus.NeedsRebuild,
+                        $"Applied patch {state.LastAppliedPatchId} is not present in the active chain " +
+                        "and no safe superseded-chain rebase is available.");
+                    await db.SaveChangesAsync(cancellationToken);
+                    return FinishRepository(
+                        region.Name,
+                        repositoryId,
+                        isComplete: false,
+                        appliedPatchCount,
+                        appliedPatchBytes,
+                        stopwatch);
+                }
+
+                startIndex = rebasePlan.StartIndex;
+                Log.Warning(
+                    "Region {Region} repository {RepositoryId} rebasing superseded installed version " +
+                    "{InstalledVersion} onto the active chain after shared version {SharedVersion}; " +
+                    "{PatchCount} replacement patches will be applied",
                     region.Name,
                     repositoryId,
-                    isComplete: false,
-                    appliedPatchCount,
-                    appliedPatchBytes,
-                    stopwatch);
+                    state.InstalledVersion,
+                    rebasePlan.SharedVersion,
+                    chain.Count - startIndex);
             }
-
-            startIndex = installedIndex + 1;
+            else
+            {
+                startIndex = installedIndex + 1;
+            }
         }
 
         var unavailablePatch = chain
@@ -258,6 +281,62 @@ public sealed class RegionalInstallationService(
     private FileInfo GetPatchFile(XivPatch patch) =>
         new(Path.Combine(_patchRoot, patch.LocalStoragePath));
 
+    private async Task<RebasePlan?> TryPlanSupersededPatchRebaseAsync(
+        int repositoryId,
+        XivInstallationState state,
+        IReadOnlyList<XivPatch> activeChain,
+        CancellationToken cancellationToken)
+    {
+        if (state.LastAppliedPatchId is null || string.IsNullOrWhiteSpace(state.InstalledVersion))
+        {
+            return null;
+        }
+
+        var installedVersion = new GameVersion(state.InstalledVersion);
+        var targetVersion = new GameVersion(activeChain[^1].RepoVersion.VersionString);
+        if (targetVersion.CompareTo(installedVersion) < 0)
+        {
+            return null;
+        }
+
+        var installedChain = await _chainResolver.ResolveAsync(
+            repositoryId,
+            toVersion: state.InstalledVersion,
+            cancellationToken: cancellationToken);
+        if (installedChain is null || installedChain.Count == 0)
+        {
+            return null;
+        }
+
+        var installedIndex = FindPatchIndex(installedChain, state.LastAppliedPatchId.Value);
+        if (installedIndex < 0)
+        {
+            return null;
+        }
+
+        var installedPatchIds = installedChain
+            .Take(installedIndex + 1)
+            .Select(patch => patch.Id)
+            .ToHashSet();
+        var sharedIndex = -1;
+        for (var index = 0; index < activeChain.Count; index++)
+        {
+            if (installedPatchIds.Contains(activeChain[index].Id))
+            {
+                sharedIndex = index;
+            }
+        }
+
+        if (sharedIndex < 0 || sharedIndex == activeChain.Count - 1)
+        {
+            return null;
+        }
+
+        return new RebasePlan(
+            sharedIndex + 1,
+            activeChain[sharedIndex].RepoVersion.VersionString);
+    }
+
     private static void BootstrapFromVersionFile(
         XivInstallationState state,
         IReadOnlyList<XivPatch> chain,
@@ -333,6 +412,8 @@ public sealed class RegionalInstallationService(
     }
 
     private sealed record RegionDefinition(string Name, int GameRepositoryId, string DirectoryName);
+
+    private sealed record RebasePlan(int StartIndex, string SharedVersion);
 
     private sealed record RepositoryReconciliationResult(
         bool IsComplete,
