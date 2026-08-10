@@ -7,7 +7,6 @@ obj/
 appsettings.*.json
 .DS_Store
 v1/Thaliak.Service.Poller/data/
-target/
 *.DotSettings*
 *.env
 *.db*
